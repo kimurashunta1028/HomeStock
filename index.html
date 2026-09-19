@@ -31,7 +31,7 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 </head>
 <body>
 <div id="app">
-<header><div><small>HOME INVENTORY · v0.2</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<header><div><small>HOME INVENTORY · v0.2.1</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
 <main id="main"></main>
 <nav class="nav">
 <button data-tab="home" class="active"><span>⌂</span><small>ホーム</small></button>
@@ -64,7 +64,14 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 
 <section id="barcodeSheet" class="sheet hidden">
 <div class="handle"></div><div class="sheethead"><button class="textbtn close">閉じる</button><b>JANコード</b><span></span></div>
-<div class="sheetbody"><div id="reader"></div><p class="muted">バーコードを枠に入れてください。</p><label>JANを手入力<div class="inline"><input id="manualJan" inputmode="numeric"><button id="janSearch" class="secondary">検索</button></div></label><div id="janStatus" class="muted"></div></div>
+<div class="sheetbody">
+<div id="reader"></div>
+<div class="inline" style="margin-top:10px">
+  <button id="switchCamera" class="secondary">カメラ切替</button>
+  <button id="restartCamera" class="secondary">カメラ再起動</button>
+</div>
+<p class="muted" id="cameraInfo">バーコードを枠に入れてください。</p>
+<label>JANを手入力<div class="inline"><input id="manualJan" inputmode="numeric"><button id="janSearch" class="secondary">検索</button></div></label><div id="janStatus" class="muted"></div></div>
 </section>
 
 <section id="receiptSheet" class="sheet hidden">
@@ -75,7 +82,7 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 <div id="toast" class="toast hidden"></div>
 
 <script>
-const K="homestock.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:""}};let data=load(),tab="home",filter="すべて",scanner=null,locked=false;
+const K="homestock.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:""}};let data=load(),tab="home",filter="すべて",scanner=null,locked=false,cameraIds=[],cameraIndex=0,currentCameraId="";
 const $=s=>document.querySelector(s);
 function load(){try{let x=JSON.parse(localStorage.getItem(K))||{};return{...D,...x,productCache:x.productCache||{},settings:{...D.settings,...(x.settings||{})}}}catch{return JSON.parse(JSON.stringify(D))}}
 function save(){localStorage.setItem(K,JSON.stringify(data))}
@@ -125,31 +132,95 @@ function openProduct(id=null,pf={}){let p=id?data.products.find(x=>x.id===id):nu
 function saveProduct(){let idv=$("#pid").value,n=$("#pname").value.trim();if(!n)return toast("商品名を入力してください");let t=chosen("#types")||"count",o={id:idv||uid(),jan:$("#jan").value,name:n,cat:chosen("#cats")||"日用品",type:t,qty:Math.max(0,+$("#qty").value||0),unit:$("#unit").value.trim()||"個",buyqty:Math.max(1,+$("#buyqty").value||1),expiry:$("#expiry").value,state:t==="pack"?"full":"high"};if(idv){let i=data.products.findIndex(x=>x.id===idv);o.state=data.products[i].state||o.state;data.products[i]={...data.products[i],...o}}else data.products.unshift(o);save();closeSheets();render();toast("保存しました")}
 function openSheet(s){$("#back").classList.remove("hidden");$(s).classList.remove("hidden")}function closeSheets(){$("#back").classList.add("hidden");document.querySelectorAll(".sheet").forEach(s=>s.classList.add("hidden"));stopScanner()}
 async function openJan(){openSheet("#barcodeSheet");startScanner()}
-async function startScanner(){
+async function refreshCameras(){
+ try{
+  const cams=await Html5Qrcode.getCameras();
+  cameraIds=cams||[];
+  return cameraIds;
+ }catch{return[]}
+}
+function cameraLooksRear(label=""){
+ return /back|rear|environment|外側|背面|広角|ultra wide|wide/i.test(label);
+}
+function cameraLooksFront(label=""){
+ return /front|user|facetime|内側|前面/i.test(label);
+}
+function chooseInitialCamera(cams){
+ const saved=localStorage.getItem("homestock.cameraId");
+ if(saved&&cams.some(c=>c.id===saved))return saved;
+ const rear=cams.find(c=>cameraLooksRear(c.label)&&!cameraLooksFront(c.label));
+ if(rear)return rear.id;
+ return cams.length>1?cams[cams.length-1].id:cams[0]?.id||"";
+}
+async function startScanner(forceCameraId=""){
  if(scanner)return;
  scanner=new Html5Qrcode("reader");
  const config={fps:10,qrbox:{width:260,height:150},aspectRatio:1.6};
  const onScan=code=>{if(locked)return;locked=true;lookupJan(code).finally(()=>setTimeout(()=>locked=false,1200))};
+
  try{
-  await scanner.start({facingMode:{exact:"environment"}},config,onScan,()=>{});
- }catch(e1){
-  try{
-   await scanner.start({facingMode:"environment"},config,onScan,()=>{});
-  }catch(e2){
+  // First attempt to obtain permission with the rear-camera constraint.
+  if(!forceCameraId){
    try{
-    const cs=await Html5Qrcode.getCameras();
-    const c=[...cs].reverse().find(x=>/back|rear|environment|外側|背面/i.test(x.label))?.id || cs.at(-1)?.id;
-    if(!c)throw 0;
-    await scanner.start(c,config,onScan,()=>{});
-   }catch(e3){
+    await scanner.start({facingMode:"environment"},config,onScan,()=>{});
+    const cams=await refreshCameras();
+    const currentTrack=document.querySelector("#reader video")?.srcObject?.getVideoTracks?.()[0];
+    const settings=currentTrack?.getSettings?.()||{};
+    currentCameraId=settings.deviceId||"";
+    const selected=cams.find(c=>c.id===currentCameraId);
+    if(selected&&cameraLooksFront(selected.label)&&cams.length>1){
+      await stopScanner();
+      const rearId=chooseInitialCamera(cams);
+      if(rearId&&rearId!==currentCameraId)return startScanner(rearId);
+    }
+    if(currentCameraId)localStorage.setItem("homestock.cameraId",currentCameraId);
+    updateCameraInfo();
+    return;
+   }catch{
+    try{await scanner.stop()}catch{}
     try{scanner.clear()}catch{}
-    scanner=null;
-    $("#janStatus").textContent="背面カメラを開始できません。Safariのカメラ権限を確認してください。";
+    scanner=new Html5Qrcode("reader");
    }
   }
+
+  const cams=await refreshCameras();
+  const chosen=forceCameraId||chooseInitialCamera(cams);
+  if(!chosen)throw new Error("No camera");
+  await scanner.start(chosen,config,onScan,()=>{});
+  currentCameraId=chosen;
+  const idx=cams.findIndex(c=>c.id===chosen);
+  if(idx>=0)cameraIndex=idx;
+  localStorage.setItem("homestock.cameraId",chosen);
+  updateCameraInfo();
+ }catch(e){
+  try{scanner.clear()}catch{}
+  scanner=null;
+  $("#janStatus").textContent="カメラを開始できません。Safariのカメラ権限を確認してください。";
  }
 }
-async function stopScanner(){if(scanner){try{await scanner.stop()}catch{}try{scanner.clear()}catch{}scanner=null}}
+function updateCameraInfo(){
+ const c=cameraIds.find(x=>x.id===currentCameraId);
+ const label=c?.label||"カメラ";
+ const info=$("#cameraInfo");
+ if(info)info.textContent="使用中："+label+" ／ 内カメなら「カメラ切替」を押してください。";
+}
+async function stopScanner(){
+ if(scanner){
+  try{await scanner.stop()}catch{}
+  try{scanner.clear()}catch{}
+  scanner=null;
+ }
+}
+async function switchCamera(){
+ const cams=await refreshCameras();
+ if(cams.length<2){toast("切り替えられるカメラが見つかりません");return}
+ const current=cams.findIndex(c=>c.id===currentCameraId);
+ cameraIndex=current>=0?(current+1)%cams.length:(cameraIndex+1)%cams.length;
+ const next=cams[cameraIndex];
+ await stopScanner();
+ await startScanner(next.id);
+ toast("カメラを切り替えました");
+}
 function normalizeJan(code){
  code=String(code||"").replace(/\D/g,"");
  if(code.length===12)code="0"+code;
@@ -239,6 +310,8 @@ function dateFrom(text){let t=text.replace(/[年月]/g,"/").replace(/日/g,""),m
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));$("#add").onclick=()=>openProduct();$("#back").onclick=closeSheets;document.querySelectorAll(".close").forEach(b=>b.onclick=closeSheets);document.querySelectorAll("#cats button").forEach(b=>b.onclick=()=>choose("#cats",b.dataset.v));document.querySelectorAll("#types button").forEach(b=>b.onclick=()=>choose("#types",b.dataset.v));$("#saveProduct").onclick=saveProduct;
 $("#deleteProduct").onclick=()=>{let x=$("#pid").value;if(x&&confirm("削除しますか？")){data.products=data.products.filter(p=>p.id!==x);save();closeSheets();render()}};
 $("#janSearch").onclick=()=>lookupJan($("#manualJan").value);
+$("#switchCamera").onclick=()=>switchCamera();
+$("#restartCamera").onclick=async()=>{await stopScanner();await startScanner();};
 $("#receiptPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#receiptProgress").classList.remove("hidden");try{let t=await ocr(f,p=>$("#receiptProgress").textContent="読み取り中… "+p+"%");showCandidates(receiptItems(t))}catch{alert("読み取りに失敗しました")}finally{$("#receiptProgress").classList.add("hidden")}};
 $("#importReceipt").onclick=()=>{let a=$("#candidates")._a||[];a.forEach((x,i)=>{if(!document.querySelector(`[data-c="${i}"]`).checked)return;let n=document.querySelector(`[data-n="${i}"]`).value.trim(),cat=document.querySelector(`[data-cat="${i}"]`).value,qty=Math.max(1,+document.querySelector(`[data-q="${i}"]`).value||1);if(!n)return;data.aliases[x.raw.toLowerCase().replace(/\s/g,"")]=n;let p=data.products.find(z=>z.name===n&&z.cat===cat);if(p)p.qty=+p.qty+qty;else data.products.unshift({id:uid(),jan:"",name:n,cat,type:"count",qty,unit:"個",buyqty:1,expiry:"",state:"high"})});save();closeSheets();render();toast("在庫へ追加しました")};
 $("#expiryPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#expiryStatus").textContent="期限を読み取り中…";try{let t=await ocr(f),d=dateFrom(t);if(d){$("#expiry").value=d;$("#expiryStatus").textContent="候補："+d}else $("#expiryStatus").textContent="読めませんでした。手入力してください。"}catch{$("#expiryStatus").textContent="読み取りに失敗しました。"}};
