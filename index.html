@@ -31,7 +31,7 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 </head>
 <body>
 <div id="app">
-<header><div><small>HOME INVENTORY</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<header><div><small>HOME INVENTORY · v0.2</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
 <main id="main"></main>
 <nav class="nav">
 <button data-tab="home" class="active"><span>⌂</span><small>ホーム</small></button>
@@ -75,9 +75,9 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 <div id="toast" class="toast hidden"></div>
 
 <script>
-const K="homestock.v1",D={products:[],aliases:{},manual:[]};let data=load(),tab="home",filter="すべて",scanner=null,locked=false;
+const K="homestock.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:""}};let data=load(),tab="home",filter="すべて",scanner=null,locked=false;
 const $=s=>document.querySelector(s);
-function load(){try{return{...D,...JSON.parse(localStorage.getItem(K))}}catch{return JSON.parse(JSON.stringify(D))}}
+function load(){try{let x=JSON.parse(localStorage.getItem(K))||{};return{...D,...x,productCache:x.productCache||{},settings:{...D.settings,...(x.settings||{})}}}catch{return JSON.parse(JSON.stringify(D))}}
 function save(){localStorage.setItem(K,JSON.stringify(data))}
 function esc(s=""){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -100,12 +100,24 @@ function recipes(){let f=expiring().filter(x=>x.cat==="食品").slice(0,3);if(!f
 function stock(){let ps=data.products.filter(p=>filter==="すべて"||p.cat===filter),fs=["すべて","日用品","食品","調味料"];return`<h2>在庫</h2><div class="filters">${fs.map(f=>`<button class="filter ${f===filter?"active":""}" data-filter="${f}">${f}</button>`).join("")}</div><section class="card">${ps.length?ps.map(prow).join(""):`<p class="muted">まだ商品がありません。右上の＋から追加できます。</p>`}</section>`}
 function prow(p){let d=days(p.expiry);return`<div class="item" data-edit="${p.id}"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)}${p.expiry?" ・ "+p.expiry:""}${d!=null&&d<=2?" ・ "+dlabel(d):""}</div></div><span class="pill ${isout(p)?"out":""}">${esc(stxt(p))}</span><div class="step"><button data-minus="${p.id}">−</button><button data-plus="${p.id}">＋</button></div></div>`}
 function shop(){let s=shopping();return`<h2>買い物リスト</h2><p class="muted">在庫が0になると自動追加されます。</p><section class="card">${s.length?s.map((x,i)=>`<div class="shoprow"><span style="width:22px;height:22px;border:2px solid #c7ccc9;border-radius:7px"></span><div class="grow"><div class="name">${esc(x.name)}</div><div class="meta">${esc(x.cat||"手動")}</div></div><b>×${x.qty}${esc(x.unit||"")}</b>${x.auto?"":`<button class="textbtn" data-rm="${i}">削除</button>`}</div>`).join(""):`<p class="muted">買うものはありません。</p>`}</section><section class="card"><h2>手動で追加</h2><div class="inline"><input id="manualName" placeholder="例：長ねぎ"><button id="manualAdd" class="secondary">追加</button></div></section>`}
-function scan(){return`<h2>スキャン</h2><div class="scan-grid"><button id="openJan" class="scan-card"><b>JANコード</b><small>単品をすばやく補充</small></button><button id="openReceipt" class="scan-card"><b>レシート</b><small>まとめ買いを一括登録</small></button></div><section class="card"><h2>おすすめ</h2><p class="muted">1〜2品ならJAN、まとめ買いならレシートが楽です。</p></section>`}
+function scan(){
+ let configured=!!(data.settings.rakutenAppId&&data.settings.rakutenAccessKey);
+ return`<h2>スキャン</h2>
+ <div class="scan-grid"><button id="openJan" class="scan-card"><b>JANコード</b><small>単品をすばやく補充</small></button><button id="openReceipt" class="scan-card"><b>レシート</b><small>まとめ買いを一括登録</small></button></div>
+ <section class="card"><div class="head"><h2>日本商品検索</h2><span class="pill ${configured?"":"out"}">${configured?"楽天API 有効":"未設定"}</span></div>
+ <p class="muted">楽天の商品価格ナビを最優先で検索し、見つからない場合だけOpen Facts系へ自動で切り替えます。設定値はこのiPhone内だけに保存します。</p>
+ <label>Rakuten Application ID<input id="rakutenAppId" value="${esc(data.settings.rakutenAppId||"")}" placeholder="Application ID"></label>
+ <label>Rakuten Access Key<input id="rakutenAccessKey" value="${esc(data.settings.rakutenAccessKey||"")}" placeholder="Access Key" type="password"></label>
+ <button id="saveRakuten" class="primary wide">楽天API設定を保存</button>
+ <a href="https://webservice.rakuten.co.jp/" target="_blank" rel="noopener" class="muted" style="display:block;margin-top:11px;color:var(--g)">楽天Web Serviceで無料のAPIキーを取得 ↗</a>
+ </section>
+ <section class="card"><h2>検索順</h2><p class="muted">① 登録済み商品 → ② 端末キャッシュ → ③ 楽天（日本商品） → ④ Open Food / Beauty / Products Facts → ⑤ 手入力</p></section>`}
 function bind(){
  $("#toStock")?.addEventListener("click",()=>setTab("stock"));document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()});
  document.querySelectorAll("[data-minus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.minus,-1)});document.querySelectorAll("[data-plus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.plus,1)});
  document.querySelectorAll("[data-edit]").forEach(x=>x.onclick=()=>openProduct(x.dataset.edit));$("#openJan")?.addEventListener("click",openJan);$("#openReceipt")?.addEventListener("click",()=>openSheet("#receiptSheet"));
  $("#manualAdd")?.addEventListener("click",()=>{let i=$("#manualName");if(!i.value.trim())return;data.manual.push({name:i.value.trim(),qty:1,unit:"",cat:"候補"});save();render()});document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{data.manual.splice(+b.dataset.rm,1);save();render()});
+ $("#saveRakuten")?.addEventListener("click",()=>{data.settings.rakutenAppId=$("#rakutenAppId").value.trim();data.settings.rakutenAccessKey=$("#rakutenAccessKey").value.trim();save();toast(data.settings.rakutenAppId&&data.settings.rakutenAccessKey?"楽天APIを有効にしました":"楽天API設定を解除しました");render()});
 }
 function chg(id,d){let p=data.products.find(x=>x.id===id);if(!p)return;if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty+d);else if(p.type==="level"){let a=["none","low","high"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"high")+d))]}else{let a=["none","half","full"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"full")+d))]}save();render()}
 function choose(sel,v){document.querySelectorAll(sel+" button").forEach(b=>b.classList.toggle("active",b.dataset.v===v))}function chosen(sel){return document.querySelector(sel+" button.active")?.dataset.v}
@@ -115,7 +127,86 @@ function openSheet(s){$("#back").classList.remove("hidden");$(s).classList.remov
 async function openJan(){openSheet("#barcodeSheet");startScanner()}
 async function startScanner(){if(scanner)return;try{scanner=new Html5Qrcode("reader");let cs=await Html5Qrcode.getCameras(),c=cs.find(x=>/back|rear|environment/i.test(x.label))?.id||cs[0]?.id;if(!c)throw 0;await scanner.start(c,{fps:10,qrbox:{width:260,height:150}},code=>{if(locked)return;locked=true;lookupJan(code).finally(()=>setTimeout(()=>locked=false,1200))},()=>{})}catch{$("#janStatus").textContent="カメラを開始できません。下からJANを手入力できます。"}}
 async function stopScanner(){if(scanner){try{await scanner.stop()}catch{}try{scanner.clear()}catch{}scanner=null}}
-async function lookupJan(code){code=String(code||"").trim();if(!code)return;$("#janStatus").textContent="検索中…";let local=data.products.find(p=>p.jan===code);if(local){chg(local.id,1);toast(local.name+" を補充しました");return}let product=null;for(let h of["world.openfoodfacts.org","world.openbeautyfacts.org","world.openproductsfacts.org"]){try{let r=await fetch("https://"+h+"/api/v2/product/"+encodeURIComponent(code)+"?fields=product_name,product_name_ja,brands"),j=await r.json();if(j.status===1&&j.product){product=j.product;break}}catch{}}closeSheets();openProduct(null,{jan:code,name:product?.product_name_ja||product?.product_name||product?.brands||"",cat:"食品"});if(!product)toast("商品名だけ手入力してください")}
+function normalizeJan(code){
+ code=String(code||"").replace(/\D/g,"");
+ if(code.length===12)code="0"+code;
+ return code;
+}
+function validGtin(code){
+ if(!/^\d{8}$|^\d{13}$/.test(code))return false;
+ let digits=code.split("").map(Number),check=digits.pop(),sum=0,weight=3;
+ for(let i=digits.length-1;i>=0;i--){sum+=digits[i]*weight;weight=weight===3?1:3}
+ return ((10-(sum%10))%10)===check;
+}
+function classifyProduct(text=""){
+ const x=String(text);
+ if(/洗剤|ティッシュ|シャンプ|コンディショナ|トリートメント|歯磨|歯ブラシ|スポンジ|ラップ|トイレ|柔軟|石鹸|せっけん|ゴミ袋|漂白|ボディソープ|ハンドソープ|掃除|除菌|消臭|キッチンペーパー|おむつ/.test(x))return"日用品";
+ if(/醤油|しょうゆ|味噌|みそ|塩|砂糖|食用油|オリーブオイル|ごま油|酢|ソース|ケチャップ|マヨ|だし|胡椒|こしょう|ドレッシング|みりん|料理酒/.test(x))return"調味料";
+ return"食品";
+}
+function jsonp(url,timeout=7000){
+ return new Promise((resolve,reject)=>{
+  const cb="hsjp_"+Date.now()+"_"+Math.random().toString(36).slice(2),sc=document.createElement("script");
+  const timer=setTimeout(()=>done(new Error("timeout")),timeout);
+  function done(err,val){clearTimeout(timer);try{delete window[cb]}catch{};sc.remove();err?reject(err):resolve(val)}
+  window[cb]=v=>done(null,v);sc.onerror=()=>done(new Error("network"));
+  sc.src=url+(url.includes("?")?"&":"?")+"callback="+encodeURIComponent(cb);document.head.appendChild(sc);
+ });
+}
+async function rakutenLookup(code){
+ const appId=data.settings.rakutenAppId,accessKey=data.settings.rakutenAccessKey;
+ if(!appId||!accessKey)return null;
+ const base="https://openapi.rakuten.co.jp/ichibaproduct/api/Product/Search/20250801";
+ const qs=new URLSearchParams({format:"json",formatVersion:"2",applicationId:appId,accessKey,productCode:code,hits:"1",elements:"productCode,productName,brandName,makerName,mediumImageUrl,genreName"});
+ try{
+  const j=await jsonp(base+"?"+qs.toString());
+  if(j?.error)return null;
+  const item=(j?.products||j?.items||[])[0];
+  if(!item)return null;
+  const name=item.productName||item.itemName||"";
+  if(!name)return null;
+  const extra=[item.brandName,item.makerName,item.genreName].filter(Boolean).join(" ");
+  return{name,cat:classifyProduct(name+" "+extra),brand:item.brandName||"",maker:item.makerName||"",image:item.mediumImageUrl||"",source:"楽天"};
+ }catch{return null}
+}
+async function openFactsLookup(code){
+ try{
+  const r=await fetch("https://world.openfoodfacts.org/api/v3/product/"+encodeURIComponent(code)+".json?product_type=all&fields=code,product_name,product_name_ja,brands,categories,image_front_small_url");
+  const j=await r.json(),p=j?.product;
+  if(p){
+   const name=p.product_name_ja||p.product_name||p.brands||"";
+   if(name)return{name,cat:classifyProduct(name+" "+(p.categories||"")),brand:p.brands||"",image:p.image_front_small_url||"",source:"Open Facts"};
+  }
+ }catch{}
+ for(let h of["world.openfoodfacts.org","world.openbeautyfacts.org","world.openproductsfacts.org"]){
+  try{
+   const r=await fetch("https://"+h+"/api/v2/product/"+encodeURIComponent(code)+".json?fields=product_name,product_name_ja,brands,categories,image_front_small_url"),j=await r.json(),p=j?.product;
+   if(j?.status===1&&p){
+    const name=p.product_name_ja||p.product_name||p.brands||"";
+    if(name)return{name,cat:classifyProduct(name+" "+(p.categories||"")),brand:p.brands||"",image:p.image_front_small_url||"",source:"Open Facts"};
+   }
+  }catch{}
+ }
+ return null;
+}
+async function lookupJan(rawCode){
+ let code=normalizeJan(rawCode);if(!code)return;
+ $("#janStatus").textContent="JAN "+code+" を検索中…";
+ if(!validGtin(code)){toast("JANコードのチェック桁が不正です");$("#janStatus").textContent="読み取り値を確認してください："+code;return}
+ let local=data.products.find(p=>normalizeJan(p.jan)===code);
+ if(local){chg(local.id,1);toast(local.name+" を補充しました");return}
+ let cached=data.productCache?.[code];
+ if(cached){closeSheets();openProduct(null,{jan:code,name:cached.name,cat:cached.cat||classifyProduct(cached.name)});toast("以前の検索結果を使いました");return}
+ let product=await rakutenLookup(code);
+ if(!product)product=await openFactsLookup(code);
+ if(product){
+  data.productCache=data.productCache||{};data.productCache[code]=product;save();
+  closeSheets();openProduct(null,{jan:code,name:product.name,cat:product.cat||classifyProduct(product.name)});
+  toast(product.source+"で商品を見つけました");
+ }else{
+  closeSheets();openProduct(null,{jan:code,name:"",cat:"日用品"});toast("商品名が見つからないので手入力してください");
+ }
+}
 async function ocr(file,cb){let r=await Tesseract.recognize(file,"jpn+eng",{logger:m=>{if(m.progress)cb?.(Math.round(m.progress*100))}});return r.data.text||""}
 function guess(n){if(/洗剤|ティッシュ|シャンプ|歯磨|ラップ|柔軟|石鹸|ゴミ袋/.test(n))return"日用品";if(/醤油|しょうゆ|味噌|みそ|塩|砂糖|油|酢|ソース|ケチャップ|マヨ|胡椒/.test(n))return"調味料";return"食品"}
 function receiptItems(text){let bad=/(合計|小計|税込|税抜|消費税|お預|お釣|現金|クレジット|ポイント|領収|TEL|電話|担当|登録番号|日時)/i,out=[];for(let l of text.split(/\n+/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean)){if(l.length<2||bad.test(l)||/^[\d,\.\-\s]+$/.test(l))continue;let qty=1,m=l.match(/[x×*]\s*(\d{1,2})/i);if(m)qty=+m[1]||1;l=l.replace(/[x×*]\s*\d{1,2}/i,"").replace(/\s+[¥￥]?\d{2,6}\s*$/,"").trim();if(l.length<2)continue;let key=l.toLowerCase().replace(/\s/g,"");out.push({raw:l,name:data.aliases[key]||l,qty,cat:guess(l)})}return out.slice(0,25)}
