@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HomeStock">
+<meta name="theme-color" content="#5c776b">
+<title>HomeStock</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{--bg:#f4f2ed;--card:#fffdf9;--ink:#22312b;--muted:#7d8581;--line:#e4e1da;--g:#5c776b;--g2:#dce8e2;--red:#b45142;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+header{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:calc(12px + env(safe-area-inset-top)) 18px 10px;background:rgba(244,242,237,.94);backdrop-filter:blur(14px)}
+header small{display:block;color:var(--g);font-weight:800;letter-spacing:.12em;font-size:9px}h1{margin:1px 0 0;font-size:28px}.plus{width:44px;height:44px;border:0;border-radius:50%;background:var(--ink);color:#fff;font-size:27px}
+main{padding:8px 14px 95px}.hero,.card{border-radius:23px;padding:17px;margin-bottom:13px}.hero{background:var(--ink);color:white}.card{background:var(--card);border:1px solid var(--line)}
+.row,.head,.stats,.inline,.nav,.scan-grid{display:flex;align-items:center}.head{justify-content:space-between}.head h2,.card h2{font-size:19px;margin:0}.badge{background:#34453e;border-radius:99px;padding:5px 9px;font-weight:800}
+.buyrow,.item,.shoprow{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line)}.hero .buyrow{border-color:#3c4b45}.grow{flex:1;min-width:0}.name{font-weight:800}.meta,.muted{font-size:12px;color:var(--muted);margin-top:3px}.hero .muted{color:#cbd4d0}
+.pill{padding:7px 10px;background:var(--g2);border-radius:99px;font-size:12px;font-weight:800}.pill.out{background:#f1ddd9;color:var(--red)}.warn{color:var(--red);font-weight:800;font-size:12px}.step{display:flex;gap:6px}.step button{border:0;background:#efede8;border-radius:11px;width:36px;height:36px;font-size:19px}
+.stats{gap:8px;margin-top:13px}.stat{flex:1;background:#f2f0eb;border-radius:15px;padding:11px}.stat b{font-size:22px;display:block}.stat small{color:var(--muted)}
+.nav{position:fixed;bottom:0;left:0;right:0;z-index:20;background:rgba(255,253,249,.96);border-top:1px solid var(--line);padding:7px 4px calc(7px + env(safe-area-inset-bottom))}
+.nav button{flex:1;border:0;background:transparent;color:#9aa09d}.nav button.active{color:var(--ink);font-weight:800}.nav span,.nav small{display:block}.nav span{font-size:18px}.nav small{font-size:10px}
+.filters{display:flex;gap:7px;overflow:auto;margin-bottom:10px}.filter{border:1px solid var(--line);background:white;padding:8px 12px;border-radius:99px;white-space:nowrap;color:var(--muted)}.filter.active{background:var(--ink);color:white}
+.sheetback{position:fixed;inset:0;z-index:50;background:#1118}.sheet{position:fixed;z-index:51;left:0;right:0;bottom:0;max-height:92dvh;overflow:auto;background:var(--bg);border-radius:24px 24px 0 0}.handle{width:42px;height:5px;background:#c9c7c0;border-radius:99px;margin:8px auto}.sheethead{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line)}.textbtn{border:0;background:transparent;color:var(--g)}.sheetbody{padding:8px 16px 28px}
+label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{width:100%;margin-top:6px;padding:12px;border:1px solid var(--line);border-radius:13px;background:white}.seg,.manage{display:grid;gap:7px;margin-top:7px}.seg{grid-template-columns:repeat(3,1fr)}.manage{grid-template-columns:1fr 1fr}.seg button,.manage button{border:1px solid var(--line);background:white;border-radius:13px;padding:10px;color:var(--muted)}.seg button.active,.manage button.active{background:var(--ink);color:white}.manage small{display:block;font-size:9px;margin-top:3px}
+.inline{gap:8px}.inline>*{flex:1}.primary,.secondary{border:0;border-radius:13px;padding:12px 14px;font-weight:800}.primary{background:var(--ink);color:white}.secondary{background:var(--g2);color:var(--ink)}.wide{width:100%;margin-top:15px}
+.scan-grid{gap:9px}.scan-card{flex:1;background:white;border:1px solid var(--line);border-radius:18px;padding:15px;text-align:left}.scan-card b,.scan-card small{display:block}.scan-card small{color:var(--muted);margin-top:5px}
+#reader{min-height:270px;background:#111;border-radius:16px;overflow:hidden}.progress{padding:12px;background:var(--g2);border-radius:13px;margin-top:12px}.candidate{display:grid;grid-template-columns:25px 1fr 62px;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}.candidate input,.candidate select{margin-top:0;padding:9px}.recipe{background:#f2f0eb;border-radius:14px;padding:11px;margin-top:9px}.toast{position:fixed;z-index:80;left:50%;bottom:100px;transform:translateX(-50%);background:#15201b;color:#fff;padding:10px 14px;border-radius:99px;font-size:12px}
+</style>
+</head>
+<body>
+<div id="app">
+<header><div><small>HOME INVENTORY</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<main id="main"></main>
+<nav class="nav">
+<button data-tab="home" class="active"><span>⌂</span><small>ホーム</small></button>
+<button data-tab="stock"><span>▦</span><small>在庫</small></button>
+<button data-tab="shopping"><span>✓</span><small>買い物</small></button>
+<button data-tab="scan"><span>⌁</span><small>スキャン</small></button>
+</nav>
+</div>
+
+<div id="back" class="sheetback hidden"></div>
+
+<section id="productSheet" class="sheet hidden">
+<div class="handle"></div><div class="sheethead"><button class="textbtn close">キャンセル</button><b id="sheetTitle">商品を追加</b><button class="textbtn" id="saveProduct">保存</button></div>
+<div class="sheetbody">
+<input type="hidden" id="pid"><input type="hidden" id="jan">
+<label>商品名<input id="pname" placeholder="例：牛乳"></label>
+<label>大分類</label><div class="seg" id="cats"><button data-v="日用品">日用品</button><button data-v="食品">食品</button><button data-v="調味料">調味料</button></div>
+<label>管理方法</label><div class="manage" id="types">
+<button data-v="count"><b>個数</b><small>卵・箱・缶</small></button>
+<button data-v="level"><b>ざっくり残量</b><small>液体など</small></button>
+<button data-v="pack"><b>パック</b><small>肉・野菜</small></button>
+<button data-v="reserve"><b>使用中＋予備</b><small>日用品</small></button>
+</div>
+<div class="inline"><label>数量 / 予備<input id="qty" type="number" value="1" min="0"></label><label>単位<input id="unit" value="個"></label></div>
+<label>いつもの購入量<input id="buyqty" type="number" value="1" min="1"></label>
+<label>賞味・消費期限<div class="inline"><input id="expiry" type="date"><label class="secondary" style="margin-top:6px;text-align:center">写真で読む<input id="expiryPhoto" type="file" accept="image/*" capture="environment" hidden></label></div></label>
+<div id="expiryStatus" class="muted"></div>
+<button id="deleteProduct" class="wide secondary hidden" style="color:var(--red)">この商品を削除</button>
+</div></section>
+
+<section id="barcodeSheet" class="sheet hidden">
+<div class="handle"></div><div class="sheethead"><button class="textbtn close">閉じる</button><b>JANコード</b><span></span></div>
+<div class="sheetbody"><div id="reader"></div><p class="muted">バーコードを枠に入れてください。</p><label>JANを手入力<div class="inline"><input id="manualJan" inputmode="numeric"><button id="janSearch" class="secondary">検索</button></div></label><div id="janStatus" class="muted"></div></div>
+</section>
+
+<section id="receiptSheet" class="sheet hidden">
+<div class="handle"></div><div class="sheethead"><button class="textbtn close">閉じる</button><b>レシート読み取り</b><span></span></div>
+<div class="sheetbody"><p class="muted">商品名・数量・大分類をまとめて候補化します。</p><label class="primary wide" style="text-align:center">レシートを撮影<input id="receiptPhoto" type="file" accept="image/*" capture="environment" hidden></label><div id="receiptProgress" class="progress hidden">読み取り中…</div><div id="candidates"></div><button id="importReceipt" class="primary wide hidden">選択した商品を在庫へ追加</button></div>
+</section>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+const K="homestock.v1",D={products:[],aliases:{},manual:[]};let data=load(),tab="home",filter="すべて",scanner=null,locked=false;
+const $=s=>document.querySelector(s);
+function load(){try{return{...D,...JSON.parse(localStorage.getItem(K))}}catch{return JSON.parse(JSON.stringify(D))}}
+function save(){localStorage.setItem(K,JSON.stringify(data))}
+function esc(s=""){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function days(x){if(!x)return null;let a=new Date(x+"T00:00:00"),b=new Date();b.setHours(0,0,0,0);return Math.ceil((a-b)/86400000)}
+function dlabel(d){if(d<0)return"期限切れ";if(d===0)return"今日";if(d===1)return"明日";return"あと"+d+"日"}
+function isout(p){return p.type==="count"?+p.qty<=0:p.type==="level"?p.state==="none":p.type==="pack"?p.state==="none":+p.qty<=0}
+function stxt(p){if(p.type==="count")return p.qty+p.unit;if(p.type==="level")return p.state==="high"?"多い":p.state==="low"?"少ない":"なし";if(p.type==="pack")return p.state==="full"?"1パック":p.state==="half"?"半分":"なし";return"予備"+p.qty+p.unit}
+function shopping(){return[...data.products.filter(isout).map(p=>({auto:1,id:p.id,name:p.name,qty:p.buyqty||1,unit:p.unit,cat:p.cat})),...data.manual]}
+function expiring(){return data.products.map(p=>({...p,dd:days(p.expiry)})).filter(p=>p.dd!=null&&p.dd<=2).sort((a,b)=>a.dd-b.dd)}
+function toast(t){let x=$("#toast");x.textContent=t;x.classList.remove("hidden");clearTimeout(toast.t);toast.t=setTimeout(()=>x.classList.add("hidden"),1800)}
+function setTab(t){tab=t;document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));render()}
+function render(){let m=$("#main");m.innerHTML=tab==="home"?home():tab==="stock"?stock():tab==="shopping"?shop():scan();bind()}
+function home(){
+ let s=shopping(),e=expiring(),p=data.products;
+ return `<section class="hero"><div class="head"><h2>買うもの</h2><span class="badge">${s.length}</span></div>${s.length?s.slice(0,5).map(x=>`<div class="buyrow"><div class="grow">${esc(x.name)}</div><b>×${x.qty}${esc(x.unit||"")}</b></div>`).join(""):`<p class="muted">いま買うものはありません。</p>`}</section>
+ <section class="card"><div class="head"><h2>期限が近い</h2><button class="textbtn" id="toStock">在庫を見る</button></div>${e.length?e.slice(0,5).map(x=>`<div class="item"><div class="grow"><div class="name">${esc(x.name)}</div><div class="meta">${esc(x.cat)}</div></div><span class="warn">${dlabel(x.dd)}</span></div>`).join(""):`<p class="muted">2日以内の期限はありません。</p>`}</section>
+ <section class="card"><h2>家のストック</h2><div class="stats"><div class="stat"><b>${p.length}</b><small>登録商品</small></div><div class="stat"><b>${p.filter(x=>x.cat==="日用品").length}</b><small>日用品</small></div><div class="stat"><b>${p.filter(x=>x.cat==="食品").length}</b><small>食品</small></div></div></section>${recipes()}`;
+}
+function recipes(){let f=expiring().filter(x=>x.cat==="食品").slice(0,3);if(!f.length)return`<section class="card"><h2>期限優先レシピ</h2><p class="muted">期限が近い食材が出ると候補を表示します。</p></section>`;let n=f.map(x=>x.name).join("・");return`<section class="card"><h2>期限優先レシピ</h2><div class="recipe"><b>使い切り炒め</b><div class="muted">${esc(n)}を手持ちの調味料で炒める</div></div><div class="recipe"><b>具だくさんスープ</b><div class="muted">${esc(n)}をスープや味噌汁にまとめて使う</div></div></section>`}
+function stock(){let ps=data.products.filter(p=>filter==="すべて"||p.cat===filter),fs=["すべて","日用品","食品","調味料"];return`<h2>在庫</h2><div class="filters">${fs.map(f=>`<button class="filter ${f===filter?"active":""}" data-filter="${f}">${f}</button>`).join("")}</div><section class="card">${ps.length?ps.map(prow).join(""):`<p class="muted">まだ商品がありません。右上の＋から追加できます。</p>`}</section>`}
+function prow(p){let d=days(p.expiry);return`<div class="item" data-edit="${p.id}"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)}${p.expiry?" ・ "+p.expiry:""}${d!=null&&d<=2?" ・ "+dlabel(d):""}</div></div><span class="pill ${isout(p)?"out":""}">${esc(stxt(p))}</span><div class="step"><button data-minus="${p.id}">−</button><button data-plus="${p.id}">＋</button></div></div>`}
+function shop(){let s=shopping();return`<h2>買い物リスト</h2><p class="muted">在庫が0になると自動追加されます。</p><section class="card">${s.length?s.map((x,i)=>`<div class="shoprow"><span style="width:22px;height:22px;border:2px solid #c7ccc9;border-radius:7px"></span><div class="grow"><div class="name">${esc(x.name)}</div><div class="meta">${esc(x.cat||"手動")}</div></div><b>×${x.qty}${esc(x.unit||"")}</b>${x.auto?"":`<button class="textbtn" data-rm="${i}">削除</button>`}</div>`).join(""):`<p class="muted">買うものはありません。</p>`}</section><section class="card"><h2>手動で追加</h2><div class="inline"><input id="manualName" placeholder="例：長ねぎ"><button id="manualAdd" class="secondary">追加</button></div></section>`}
+function scan(){return`<h2>スキャン</h2><div class="scan-grid"><button id="openJan" class="scan-card"><b>JANコード</b><small>単品をすばやく補充</small></button><button id="openReceipt" class="scan-card"><b>レシート</b><small>まとめ買いを一括登録</small></button></div><section class="card"><h2>おすすめ</h2><p class="muted">1〜2品ならJAN、まとめ買いならレシートが楽です。</p></section>`}
+function bind(){
+ $("#toStock")?.addEventListener("click",()=>setTab("stock"));document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()});
+ document.querySelectorAll("[data-minus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.minus,-1)});document.querySelectorAll("[data-plus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.plus,1)});
+ document.querySelectorAll("[data-edit]").forEach(x=>x.onclick=()=>openProduct(x.dataset.edit));$("#openJan")?.addEventListener("click",openJan);$("#openReceipt")?.addEventListener("click",()=>openSheet("#receiptSheet"));
+ $("#manualAdd")?.addEventListener("click",()=>{let i=$("#manualName");if(!i.value.trim())return;data.manual.push({name:i.value.trim(),qty:1,unit:"",cat:"候補"});save();render()});document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{data.manual.splice(+b.dataset.rm,1);save();render()});
+}
+function chg(id,d){let p=data.products.find(x=>x.id===id);if(!p)return;if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty+d);else if(p.type==="level"){let a=["none","low","high"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"high")+d))]}else{let a=["none","half","full"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"full")+d))]}save();render()}
+function choose(sel,v){document.querySelectorAll(sel+" button").forEach(b=>b.classList.toggle("active",b.dataset.v===v))}function chosen(sel){return document.querySelector(sel+" button.active")?.dataset.v}
+function openProduct(id=null,pf={}){let p=id?data.products.find(x=>x.id===id):null,v=p||{id:"",jan:"",name:"",cat:"日用品",type:"count",qty:1,unit:"個",buyqty:1,expiry:"",state:"high",...pf};$("#pid").value=v.id||"";$("#jan").value=v.jan||"";$("#pname").value=v.name||"";$("#qty").value=v.qty??1;$("#unit").value=v.unit||"個";$("#buyqty").value=v.buyqty||1;$("#expiry").value=v.expiry||"";choose("#cats",v.cat);choose("#types",v.type);$("#sheetTitle").textContent=p?"商品を編集":"商品を追加";$("#deleteProduct").classList.toggle("hidden",!p);openSheet("#productSheet")}
+function saveProduct(){let idv=$("#pid").value,n=$("#pname").value.trim();if(!n)return toast("商品名を入力してください");let t=chosen("#types")||"count",o={id:idv||uid(),jan:$("#jan").value,name:n,cat:chosen("#cats")||"日用品",type:t,qty:Math.max(0,+$("#qty").value||0),unit:$("#unit").value.trim()||"個",buyqty:Math.max(1,+$("#buyqty").value||1),expiry:$("#expiry").value,state:t==="pack"?"full":"high"};if(idv){let i=data.products.findIndex(x=>x.id===idv);o.state=data.products[i].state||o.state;data.products[i]={...data.products[i],...o}}else data.products.unshift(o);save();closeSheets();render();toast("保存しました")}
+function openSheet(s){$("#back").classList.remove("hidden");$(s).classList.remove("hidden")}function closeSheets(){$("#back").classList.add("hidden");document.querySelectorAll(".sheet").forEach(s=>s.classList.add("hidden"));stopScanner()}
+async function openJan(){openSheet("#barcodeSheet");startScanner()}
+async function startScanner(){if(scanner)return;try{scanner=new Html5Qrcode("reader");let cs=await Html5Qrcode.getCameras(),c=cs.find(x=>/back|rear|environment/i.test(x.label))?.id||cs[0]?.id;if(!c)throw 0;await scanner.start(c,{fps:10,qrbox:{width:260,height:150}},code=>{if(locked)return;locked=true;lookupJan(code).finally(()=>setTimeout(()=>locked=false,1200))},()=>{})}catch{$("#janStatus").textContent="カメラを開始できません。下からJANを手入力できます。"}}
+async function stopScanner(){if(scanner){try{await scanner.stop()}catch{}try{scanner.clear()}catch{}scanner=null}}
+async function lookupJan(code){code=String(code||"").trim();if(!code)return;$("#janStatus").textContent="検索中…";let local=data.products.find(p=>p.jan===code);if(local){chg(local.id,1);toast(local.name+" を補充しました");return}let product=null;for(let h of["world.openfoodfacts.org","world.openbeautyfacts.org","world.openproductsfacts.org"]){try{let r=await fetch("https://"+h+"/api/v2/product/"+encodeURIComponent(code)+"?fields=product_name,product_name_ja,brands"),j=await r.json();if(j.status===1&&j.product){product=j.product;break}}catch{}}closeSheets();openProduct(null,{jan:code,name:product?.product_name_ja||product?.product_name||product?.brands||"",cat:"食品"});if(!product)toast("商品名だけ手入力してください")}
+async function ocr(file,cb){let r=await Tesseract.recognize(file,"jpn+eng",{logger:m=>{if(m.progress)cb?.(Math.round(m.progress*100))}});return r.data.text||""}
+function guess(n){if(/洗剤|ティッシュ|シャンプ|歯磨|ラップ|柔軟|石鹸|ゴミ袋/.test(n))return"日用品";if(/醤油|しょうゆ|味噌|みそ|塩|砂糖|油|酢|ソース|ケチャップ|マヨ|胡椒/.test(n))return"調味料";return"食品"}
+function receiptItems(text){let bad=/(合計|小計|税込|税抜|消費税|お預|お釣|現金|クレジット|ポイント|領収|TEL|電話|担当|登録番号|日時)/i,out=[];for(let l of text.split(/\n+/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean)){if(l.length<2||bad.test(l)||/^[\d,\.\-\s]+$/.test(l))continue;let qty=1,m=l.match(/[x×*]\s*(\d{1,2})/i);if(m)qty=+m[1]||1;l=l.replace(/[x×*]\s*\d{1,2}/i,"").replace(/\s+[¥￥]?\d{2,6}\s*$/,"").trim();if(l.length<2)continue;let key=l.toLowerCase().replace(/\s/g,"");out.push({raw:l,name:data.aliases[key]||l,qty,cat:guess(l)})}return out.slice(0,25)}
+function showCandidates(a){$("#candidates").innerHTML=a.map((x,i)=>`<div class="candidate"><input type="checkbox" checked data-c="${i}"><div><input value="${esc(x.name)}" data-n="${i}"><select data-cat="${i}"><option ${x.cat==="日用品"?"selected":""}>日用品</option><option ${x.cat==="食品"?"selected":""}>食品</option><option ${x.cat==="調味料"?"selected":""}>調味料</option></select></div><input type="number" min="1" value="${x.qty}" data-q="${i}"></div>`).join("");$("#candidates")._a=a;$("#importReceipt").classList.toggle("hidden",!a.length)}
+function dateFrom(text){let t=text.replace(/[年月]/g,"/").replace(/日/g,""),m=t.match(/(20\d{2})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/),n=new Date(),y,mo,d;if(m){y=+m[1];mo=+m[2];d=+m[3]}else if((m=t.match(/(\d{1,2})[\/.\-](\d{1,2})/))){y=n.getFullYear();mo=+m[1];d=+m[2]}else return null;if(mo<1||mo>12||d<1||d>31)return null;return y+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0")}
+
+document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));$("#add").onclick=()=>openProduct();$("#back").onclick=closeSheets;document.querySelectorAll(".close").forEach(b=>b.onclick=closeSheets);document.querySelectorAll("#cats button").forEach(b=>b.onclick=()=>choose("#cats",b.dataset.v));document.querySelectorAll("#types button").forEach(b=>b.onclick=()=>choose("#types",b.dataset.v));$("#saveProduct").onclick=saveProduct;
+$("#deleteProduct").onclick=()=>{let x=$("#pid").value;if(x&&confirm("削除しますか？")){data.products=data.products.filter(p=>p.id!==x);save();closeSheets();render()}};
+$("#janSearch").onclick=()=>lookupJan($("#manualJan").value);
+$("#receiptPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#receiptProgress").classList.remove("hidden");try{let t=await ocr(f,p=>$("#receiptProgress").textContent="読み取り中… "+p+"%");showCandidates(receiptItems(t))}catch{alert("読み取りに失敗しました")}finally{$("#receiptProgress").classList.add("hidden")}};
+$("#importReceipt").onclick=()=>{let a=$("#candidates")._a||[];a.forEach((x,i)=>{if(!document.querySelector(`[data-c="${i}"]`).checked)return;let n=document.querySelector(`[data-n="${i}"]`).value.trim(),cat=document.querySelector(`[data-cat="${i}"]`).value,qty=Math.max(1,+document.querySelector(`[data-q="${i}"]`).value||1);if(!n)return;data.aliases[x.raw.toLowerCase().replace(/\s/g,"")]=n;let p=data.products.find(z=>z.name===n&&z.cat===cat);if(p)p.qty=+p.qty+qty;else data.products.unshift({id:uid(),jan:"",name:n,cat,type:"count",qty,unit:"個",buyqty:1,expiry:"",state:"high"})});save();closeSheets();render();toast("在庫へ追加しました")};
+$("#expiryPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#expiryStatus").textContent="期限を読み取り中…";try{let t=await ocr(f),d=dateFrom(t);if(d){$("#expiry").value=d;$("#expiryStatus").textContent="候補："+d}else $("#expiryStatus").textContent="読めませんでした。手入力してください。"}catch{$("#expiryStatus").textContent="読み取りに失敗しました。"}};
+
+choose("#cats","日用品");choose("#types","count");render();
+</script>
+</body></html>
