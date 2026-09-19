@@ -125,7 +125,30 @@ function openProduct(id=null,pf={}){let p=id?data.products.find(x=>x.id===id):nu
 function saveProduct(){let idv=$("#pid").value,n=$("#pname").value.trim();if(!n)return toast("商品名を入力してください");let t=chosen("#types")||"count",o={id:idv||uid(),jan:$("#jan").value,name:n,cat:chosen("#cats")||"日用品",type:t,qty:Math.max(0,+$("#qty").value||0),unit:$("#unit").value.trim()||"個",buyqty:Math.max(1,+$("#buyqty").value||1),expiry:$("#expiry").value,state:t==="pack"?"full":"high"};if(idv){let i=data.products.findIndex(x=>x.id===idv);o.state=data.products[i].state||o.state;data.products[i]={...data.products[i],...o}}else data.products.unshift(o);save();closeSheets();render();toast("保存しました")}
 function openSheet(s){$("#back").classList.remove("hidden");$(s).classList.remove("hidden")}function closeSheets(){$("#back").classList.add("hidden");document.querySelectorAll(".sheet").forEach(s=>s.classList.add("hidden"));stopScanner()}
 async function openJan(){openSheet("#barcodeSheet");startScanner()}
-async function startScanner(){if(scanner)return;try{scanner=new Html5Qrcode("reader");let cs=await Html5Qrcode.getCameras(),c=cs.find(x=>/back|rear|environment/i.test(x.label))?.id||cs[0]?.id;if(!c)throw 0;await scanner.start(c,{fps:10,qrbox:{width:260,height:150}},code=>{if(locked)return;locked=true;lookupJan(code).finally(()=>setTimeout(()=>locked=false,1200))},()=>{})}catch{$("#janStatus").textContent="カメラを開始できません。下からJANを手入力できます。"}}
+async function startScanner(){
+ if(scanner)return;
+ scanner=new Html5Qrcode("reader");
+ const config={fps:10,qrbox:{width:260,height:150},aspectRatio:1.6};
+ const onScan=code=>{if(locked)return;locked=true;lookupJan(code).finally(()=>setTimeout(()=>locked=false,1200))};
+ try{
+  await scanner.start({facingMode:{exact:"environment"}},config,onScan,()=>{});
+ }catch(e1){
+  try{
+   await scanner.start({facingMode:"environment"},config,onScan,()=>{});
+  }catch(e2){
+   try{
+    const cs=await Html5Qrcode.getCameras();
+    const c=[...cs].reverse().find(x=>/back|rear|environment|外側|背面/i.test(x.label))?.id || cs.at(-1)?.id;
+    if(!c)throw 0;
+    await scanner.start(c,config,onScan,()=>{});
+   }catch(e3){
+    try{scanner.clear()}catch{}
+    scanner=null;
+    $("#janStatus").textContent="背面カメラを開始できません。Safariのカメラ権限を確認してください。";
+   }
+  }
+ }
+}
 async function stopScanner(){if(scanner){try{await scanner.stop()}catch{}try{scanner.clear()}catch{}scanner=null}}
 function normalizeJan(code){
  code=String(code||"").replace(/\D/g,"");
