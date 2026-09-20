@@ -27,12 +27,23 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 .inline{gap:8px}.inline>*{flex:1}.primary,.secondary{border:0;border-radius:13px;padding:12px 14px;font-weight:800}.primary{background:var(--ink);color:white}.secondary{background:var(--g2);color:var(--ink)}.wide{width:100%;margin-top:15px}
 .scan-grid{gap:9px}.scan-card{flex:1;background:white;border:1px solid var(--line);border-radius:18px;padding:15px;text-align:left}.scan-card b,.scan-card small{display:block}.scan-card small{color:var(--muted);margin-top:5px}
 #reader{min-height:270px;background:#111;border-radius:16px;overflow:hidden}.progress{padding:12px;background:var(--g2);border-radius:13px;margin-top:12px}.candidate{display:grid;grid-template-columns:25px 1fr 62px;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}.candidate input,.candidate select{margin-top:0;padding:9px}.recipe{background:#f2f0eb;border-radius:14px;padding:11px;margin-top:9px}.toast{position:fixed;z-index:80;left:50%;bottom:100px;transform:translateX(-50%);background:#15201b;color:#fff;padding:10px 14px;border-radius:99px;font-size:12px}
+
+.jan-result{margin-top:10px;padding:13px;border:1px solid var(--line);border-radius:15px;background:#fff}
+.jan-result b{display:block;font-size:15px}.jan-result .source{display:inline-block;margin-top:6px;padding:4px 8px;border-radius:99px;background:var(--g2);font-size:10px;font-weight:800}
+.existing-choice{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid var(--line)}
+.existing-choice:last-child{border-bottom:0}.existing-choice button{border:0;border-radius:11px;padding:9px 10px;background:var(--g2);color:var(--ink);font-weight:800;font-size:11px}
+.photo-scan{display:block;text-align:center;margin-top:9px}
+.db-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.db-badge{padding:5px 8px;border-radius:99px;background:#eeece7;color:var(--muted);font-size:10px;font-weight:800}.db-badge.on{background:var(--g2);color:#38574a}
+
 </style>
 </head>
 <body>
 <div id="app">
-<header><div><small>HOME INVENTORY · v0.2.1</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<header><div><small>HOME INVENTORY · v0.3</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
 <main id="main"></main>
+<!-- Begin Yahoo! JAPAN Web Services Attribution Snippet -->
+<span style="margin:15px 15px 15px 15px"><a href="https://developer.yahoo.co.jp/sitemap/">Webサービス by Yahoo! JAPAN</a></span>
+<!-- End Yahoo! JAPAN Web Services Attribution Snippet -->
 <nav class="nav">
 <button data-tab="home" class="active"><span>⌂</span><small>ホーム</small></button>
 <button data-tab="stock"><span>▦</span><small>在庫</small></button>
@@ -70,8 +81,22 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
   <button id="switchCamera" class="secondary">カメラ切替</button>
   <button id="restartCamera" class="secondary">カメラ再起動</button>
 </div>
-<p class="muted" id="cameraInfo">バーコードを枠に入れてください。</p>
+<label class="secondary photo-scan">バーコードを写真で読む<input id="barcodePhoto" type="file" accept="image/*" capture="environment" hidden></label>
+<p class="muted" id="cameraInfo">バーコードを横向きにして、枠いっぱいに近づけてください。</p>
 <label>JANを手入力<div class="inline"><input id="manualJan" inputmode="numeric"><button id="janSearch" class="secondary">検索</button></div></label><div id="janStatus" class="muted"></div></div>
+</section>
+
+
+<section id="janResolveSheet" class="sheet hidden">
+<div class="handle"></div><div class="sheethead"><button class="textbtn close">閉じる</button><b>JAN読み取り結果</b><span></span></div>
+<div class="sheetbody">
+  <div id="janResolveInfo"></div>
+  <h3 style="margin:18px 0 4px">登録済みの商品から選ぶ</h3>
+  <p class="muted">すでに手入力してある商品なら、ここで紐付ければ次回からJANだけで補充できます。同じ商品に複数JANも登録できます。</p>
+  <input id="existingSearch" placeholder="登録済み商品を検索">
+  <div id="existingChoices" class="card" style="padding-top:4px;padding-bottom:4px"></div>
+  <button id="newFromJan" class="primary wide">新規商品として登録</button>
+</div>
 </section>
 
 <section id="receiptSheet" class="sheet hidden">
@@ -82,9 +107,13 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 <div id="toast" class="toast hidden"></div>
 
 <script>
-const K="homestock.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:""}};let data=load(),tab="home",filter="すべて",scanner=null,locked=false,cameraIds=[],cameraIndex=0,currentCameraId="";
+const K="homestock.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:"",yahooClientId:""}};let data=load(),tab="home",filter="すべて",scanner=null,locked=false,cameraIds=[],cameraIndex=0,currentCameraId="",janResolveState={code:"",product:null};
 const $=s=>document.querySelector(s);
-function load(){try{let x=JSON.parse(localStorage.getItem(K))||{};return{...D,...x,productCache:x.productCache||{},settings:{...D.settings,...(x.settings||{})}}}catch{return JSON.parse(JSON.stringify(D))}}
+function load(){try{
+ let x=JSON.parse(localStorage.getItem(K))||{};
+ let products=(x.products||[]).map(p=>({...p,jans:Array.isArray(p.jans)?p.jans.filter(Boolean):(p.jan?[p.jan]:[])}));
+ return{...D,...x,products,productCache:x.productCache||{},settings:{...D.settings,...(x.settings||{})}}
+}catch{return JSON.parse(JSON.stringify(D))}}
 function save(){localStorage.setItem(K,JSON.stringify(data))}
 function esc(s=""){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -108,28 +137,41 @@ function stock(){let ps=data.products.filter(p=>filter==="すべて"||p.cat===fi
 function prow(p){let d=days(p.expiry);return`<div class="item" data-edit="${p.id}"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)}${p.expiry?" ・ "+p.expiry:""}${d!=null&&d<=2?" ・ "+dlabel(d):""}</div></div><span class="pill ${isout(p)?"out":""}">${esc(stxt(p))}</span><div class="step"><button data-minus="${p.id}">−</button><button data-plus="${p.id}">＋</button></div></div>`}
 function shop(){let s=shopping();return`<h2>買い物リスト</h2><p class="muted">在庫が0になると自動追加されます。</p><section class="card">${s.length?s.map((x,i)=>`<div class="shoprow"><span style="width:22px;height:22px;border:2px solid #c7ccc9;border-radius:7px"></span><div class="grow"><div class="name">${esc(x.name)}</div><div class="meta">${esc(x.cat||"手動")}</div></div><b>×${x.qty}${esc(x.unit||"")}</b>${x.auto?"":`<button class="textbtn" data-rm="${i}">削除</button>`}</div>`).join(""):`<p class="muted">買うものはありません。</p>`}</section><section class="card"><h2>手動で追加</h2><div class="inline"><input id="manualName" placeholder="例：長ねぎ"><button id="manualAdd" class="secondary">追加</button></div></section>`}
 function scan(){
- let configured=!!(data.settings.rakutenAppId&&data.settings.rakutenAccessKey);
+ let rakuten=!!(data.settings.rakutenAppId&&data.settings.rakutenAccessKey),yahoo=!!data.settings.yahooClientId;
  return`<h2>スキャン</h2>
  <div class="scan-grid"><button id="openJan" class="scan-card"><b>JANコード</b><small>単品をすばやく補充</small></button><button id="openReceipt" class="scan-card"><b>レシート</b><small>まとめ買いを一括登録</small></button></div>
- <section class="card"><div class="head"><h2>日本商品検索</h2><span class="pill ${configured?"":"out"}">${configured?"楽天API 有効":"未設定"}</span></div>
- <p class="muted">楽天の商品価格ナビを最優先で検索し、見つからない場合だけOpen Facts系へ自動で切り替えます。設定値はこのiPhone内だけに保存します。</p>
+ <section class="card"><div class="head"><h2>商品データベース</h2><span class="pill">5系統</span></div>
+ <div class="db-badges"><span class="db-badge ${rakuten?"on":""}">楽天 ${rakuten?"ON":"未設定"}</span><span class="db-badge ${yahoo?"on":""}">Yahoo ${yahoo?"ON":"未設定"}</span><span class="db-badge on">Open Facts</span><span class="db-badge on">UPCitemdb</span><span class="db-badge on">端末学習</span></div>
+ <p class="muted">日本商品は楽天・Yahooを優先し、Open FactsとUPCitemdbも照合します。見つからない商品は、登録済み在庫にJANを紐付けて端末内で学習できます。</p>
  <label>Rakuten Application ID<input id="rakutenAppId" value="${esc(data.settings.rakutenAppId||"")}" placeholder="Application ID"></label>
  <label>Rakuten Access Key<input id="rakutenAccessKey" value="${esc(data.settings.rakutenAccessKey||"")}" placeholder="Access Key" type="password"></label>
- <button id="saveRakuten" class="primary wide">楽天API設定を保存</button>
- <a href="https://webservice.rakuten.co.jp/" target="_blank" rel="noopener" class="muted" style="display:block;margin-top:11px;color:var(--g)">楽天Web Serviceで無料のAPIキーを取得 ↗</a>
+ <label>Yahoo! JAPAN Client ID（任意）<input id="yahooClientId" value="${esc(data.settings.yahooClientId||"")}" placeholder="Client ID"></label>
+ <button id="saveApiSettings" class="primary wide">API設定を保存</button>
  </section>
- <section class="card"><h2>検索順</h2><p class="muted">① 登録済み商品 → ② 端末キャッシュ → ③ 楽天（日本商品） → ④ Open Food / Beauty / Products Facts → ⑤ 手入力</p></section>`}
+ <section class="card"><h2>検索順</h2><p class="muted">登録済みJAN → 端末キャッシュ → 楽天 / Yahoo / Open Facts / UPCitemdb → 登録済み商品から選択 → 新規登録</p></section>`}
 function bind(){
  $("#toStock")?.addEventListener("click",()=>setTab("stock"));document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()});
  document.querySelectorAll("[data-minus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.minus,-1)});document.querySelectorAll("[data-plus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.plus,1)});
  document.querySelectorAll("[data-edit]").forEach(x=>x.onclick=()=>openProduct(x.dataset.edit));$("#openJan")?.addEventListener("click",openJan);$("#openReceipt")?.addEventListener("click",()=>openSheet("#receiptSheet"));
  $("#manualAdd")?.addEventListener("click",()=>{let i=$("#manualName");if(!i.value.trim())return;data.manual.push({name:i.value.trim(),qty:1,unit:"",cat:"候補"});save();render()});document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{data.manual.splice(+b.dataset.rm,1);save();render()});
- $("#saveRakuten")?.addEventListener("click",()=>{data.settings.rakutenAppId=$("#rakutenAppId").value.trim();data.settings.rakutenAccessKey=$("#rakutenAccessKey").value.trim();save();toast(data.settings.rakutenAppId&&data.settings.rakutenAccessKey?"楽天APIを有効にしました":"楽天API設定を解除しました");render()});
+ $("#saveApiSettings")?.addEventListener("click",()=>{
+  data.settings.rakutenAppId=$("#rakutenAppId").value.trim();
+  data.settings.rakutenAccessKey=$("#rakutenAccessKey").value.trim();
+  data.settings.yahooClientId=$("#yahooClientId").value.trim();
+  save();toast("API設定を保存しました");render()
+ });
 }
 function chg(id,d){let p=data.products.find(x=>x.id===id);if(!p)return;if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty+d);else if(p.type==="level"){let a=["none","low","high"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"high")+d))]}else{let a=["none","half","full"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"full")+d))]}save();render()}
 function choose(sel,v){document.querySelectorAll(sel+" button").forEach(b=>b.classList.toggle("active",b.dataset.v===v))}function chosen(sel){return document.querySelector(sel+" button.active")?.dataset.v}
 function openProduct(id=null,pf={}){let p=id?data.products.find(x=>x.id===id):null,v=p||{id:"",jan:"",name:"",cat:"日用品",type:"count",qty:1,unit:"個",buyqty:1,expiry:"",state:"high",...pf};$("#pid").value=v.id||"";$("#jan").value=v.jan||"";$("#pname").value=v.name||"";$("#qty").value=v.qty??1;$("#unit").value=v.unit||"個";$("#buyqty").value=v.buyqty||1;$("#expiry").value=v.expiry||"";choose("#cats",v.cat);choose("#types",v.type);$("#sheetTitle").textContent=p?"商品を編集":"商品を追加";$("#deleteProduct").classList.toggle("hidden",!p);openSheet("#productSheet")}
-function saveProduct(){let idv=$("#pid").value,n=$("#pname").value.trim();if(!n)return toast("商品名を入力してください");let t=chosen("#types")||"count",o={id:idv||uid(),jan:$("#jan").value,name:n,cat:chosen("#cats")||"日用品",type:t,qty:Math.max(0,+$("#qty").value||0),unit:$("#unit").value.trim()||"個",buyqty:Math.max(1,+$("#buyqty").value||1),expiry:$("#expiry").value,state:t==="pack"?"full":"high"};if(idv){let i=data.products.findIndex(x=>x.id===idv);o.state=data.products[i].state||o.state;data.products[i]={...data.products[i],...o}}else data.products.unshift(o);save();closeSheets();render();toast("保存しました")}
+function saveProduct(){
+ let idv=$("#pid").value,n=$("#pname").value.trim();if(!n)return toast("商品名を入力してください");
+ let t=chosen("#types")||"count",jan=normalizeJan($("#jan").value),prev=idv?data.products.find(x=>x.id===idv):null;
+ let jans=[...(prev?.jans||[])];if(prev?.jan)jans.push(prev.jan);if(jan)jans.push(jan);jans=[...new Set(jans.map(normalizeJan).filter(Boolean))];
+ let o={id:idv||uid(),jan:jan||(prev?.jan||""),jans,name:n,cat:chosen("#cats")||"日用品",type:t,qty:Math.max(0,+$("#qty").value||0),unit:$("#unit").value.trim()||"個",buyqty:Math.max(1,+$("#buyqty").value||1),expiry:$("#expiry").value,state:t==="pack"?"full":"high"};
+ if(idv){let i=data.products.findIndex(x=>x.id===idv);o.state=data.products[i].state||o.state;data.products[i]={...data.products[i],...o}}else data.products.unshift(o);
+ save();closeSheets();render();toast("保存しました")
+}
 function openSheet(s){$("#back").classList.remove("hidden");$(s).classList.remove("hidden")}function closeSheets(){$("#back").classList.add("hidden");document.querySelectorAll(".sheet").forEach(s=>s.classList.add("hidden"));stopScanner()}
 async function openJan(){openSheet("#barcodeSheet");startScanner()}
 async function refreshCameras(){
@@ -152,10 +194,29 @@ function chooseInitialCamera(cams){
  if(rear)return rear.id;
  return cams.length>1?cams[cams.length-1].id:cams[0]?.id||"";
 }
+function scannerOptions(){
+ return{
+  formatsToSupport:[
+   Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,
+   Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E
+  ],
+  useBarCodeDetectorIfSupported:true,
+  verbose:false
+ }
+}
+async function tuneCamera(){
+ try{
+  const track=document.querySelector("#reader video")?.srcObject?.getVideoTracks?.()[0];
+  if(!track)return;
+  const caps=track.getCapabilities?.()||{},adv={};
+  if(Array.isArray(caps.focusMode)&&caps.focusMode.includes("continuous"))adv.focusMode="continuous";
+  if(Object.keys(adv).length)await track.applyConstraints({advanced:[adv]});
+ }catch{}
+}
 async function startScanner(forceCameraId=""){
  if(scanner)return;
- scanner=new Html5Qrcode("reader");
- const config={fps:10,qrbox:{width:260,height:150},aspectRatio:1.6};
+ scanner=new Html5Qrcode("reader",scannerOptions());
+ const config={fps:20,qrbox:{width:310,height:165},aspectRatio:1.777778,disableFlip:true};
  const onScan=code=>{if(locked)return;locked=true;lookupJan(code).finally(()=>setTimeout(()=>locked=false,1200))};
 
  try{
@@ -174,12 +235,12 @@ async function startScanner(forceCameraId=""){
       if(rearId&&rearId!==currentCameraId)return startScanner(rearId);
     }
     if(currentCameraId)localStorage.setItem("homestock.cameraId",currentCameraId);
-    updateCameraInfo();
+    await tuneCamera();updateCameraInfo();
     return;
    }catch{
     try{await scanner.stop()}catch{}
     try{scanner.clear()}catch{}
-    scanner=new Html5Qrcode("reader");
+    scanner=new Html5Qrcode("reader",scannerOptions());
    }
   }
 
@@ -191,7 +252,7 @@ async function startScanner(forceCameraId=""){
   const idx=cams.findIndex(c=>c.id===chosen);
   if(idx>=0)cameraIndex=idx;
   localStorage.setItem("homestock.cameraId",chosen);
-  updateCameraInfo();
+  await tuneCamera();updateCameraInfo();
  }catch(e){
   try{scanner.clear()}catch{}
   scanner=null;
@@ -202,7 +263,7 @@ function updateCameraInfo(){
  const c=cameraIds.find(x=>x.id===currentCameraId);
  const label=c?.label||"カメラ";
  const info=$("#cameraInfo");
- if(info)info.textContent="使用中："+label+" ／ 内カメなら「カメラ切替」を押してください。";
+ if(info)info.textContent="使用中："+label+" ／ バーコードを横向きにして枠いっぱいに近づけてください。";
 }
 async function stopScanner(){
  if(scanner){
@@ -220,6 +281,17 @@ async function switchCamera(){
  await stopScanner();
  await startScanner(next.id);
  toast("カメラを切り替えました");
+}
+function productHasJan(p,code){
+ code=normalizeJan(code);
+ return normalizeJan(p.jan)===code||(p.jans||[]).some(x=>normalizeJan(x)===code)
+}
+function restockProduct(pid){
+ const p=data.products.find(x=>x.id===pid);if(!p)return;
+ if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty||0)+1;
+ else if(p.type==="level")p.state="high";
+ else if(p.type==="pack")p.state="full";
+ save();render()
 }
 function normalizeJan(code){
  code=String(code||"").replace(/\D/g,"");
@@ -263,6 +335,22 @@ async function rakutenLookup(code){
   return{name,cat:classifyProduct(name+" "+extra),brand:item.brandName||"",maker:item.makerName||"",image:item.mediumImageUrl||"",source:"楽天"};
  }catch{return null}
 }
+async function yahooLookup(code){
+ const appid=data.settings.yahooClientId;if(!appid)return null;
+ try{
+  const u="https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch?"+new URLSearchParams({appid,jan_code:code,results:"5",image_size:"300"});
+  const r=await fetch(u),j=await r.json(),h=j?.hits?.[0];if(!h?.name)return null;
+  const brand=h.brand?.name||"",extra=[brand,...(h.parentGenreCategories||[]).map(x=>x.name||"")].join(" ");
+  return{name:h.name,cat:classifyProduct(h.name+" "+extra),brand,image:h.exImage?.url||h.image?.medium||"",source:"Yahoo!ショッピング"};
+ }catch{return null}
+}
+async function upcItemDbLookup(code){
+ try{
+  const r=await fetch("https://api.upcitemdb.com/prod/trial/lookup?upc="+encodeURIComponent(code),{headers:{Accept:"application/json"}});
+  if(!r.ok)return null;const j=await r.json(),p=j?.items?.[0];if(!p?.title)return null;
+  return{name:p.title,cat:classifyProduct((p.title||"")+" "+(p.category||"")),brand:p.brand||"",image:p.images?.[0]||"",source:"UPCitemdb"};
+ }catch{return null}
+}
 async function openFactsLookup(code){
  try{
   const r=await fetch("https://world.openfoodfacts.org/api/v3/product/"+encodeURIComponent(code)+".json?product_type=all&fields=code,product_name,product_name_ja,brands,categories,image_front_small_url");
@@ -283,23 +371,54 @@ async function openFactsLookup(code){
  }
  return null;
 }
+function normName(x=""){return String(x).toLowerCase().normalize("NFKC").replace(/[\s　・･\-_/（）()【】\[\]「」『』,，.。]/g,"")}
+function nameScore(a,b){
+ a=normName(a);b=normName(b);if(!a||!b)return 0;if(a===b)return 100;if(a.includes(b)||b.includes(a))return 75;
+ let aa=new Set(),bb=new Set();for(let i=0;i<a.length-1;i++)aa.add(a.slice(i,i+2));for(let i=0;i<b.length-1;i++)bb.add(b.slice(i,i+2));
+ let inter=[...aa].filter(x=>bb.has(x)).length,uni=new Set([...aa,...bb]).size;return uni?Math.round(inter/uni*60):0
+}
+function existingCandidates(product,search=""){
+ const q=normName(search),target=product?.name||"";
+ return data.products.map(p=>{
+  let score=target?nameScore(target,p.name):0;
+  if(product?.cat&&p.cat===product.cat)score+=8;
+  if(!(p.jans||[]).length&&!p.jan)score+=4;
+  if(q&&!normName(p.name).includes(q))score-=1000;
+  return{p,score}
+ }).filter(x=>x.score>-500).sort((a,b)=>b.score-a.score||a.p.name.localeCompare(b.p.name,"ja")).slice(0,12).map(x=>x.p)
+}
+function renderJanExisting(search=""){
+ const box=$("#existingChoices");if(!box)return;
+ const list=existingCandidates(janResolveState.product,search);
+ box.innerHTML=list.length?list.map(p=>`<div class="existing-choice"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)} ・ ${esc(stxt(p))}${(p.jans||[]).length||p.jan?" ・ JAN登録済み":" ・ 手入力登録"}</div></div><button data-link-jan="${p.id}">これに紐付け</button></div>`).join(""):`<p class="muted">該当する登録済み商品がありません。</p>`;
+ box.querySelectorAll("[data-link-jan]").forEach(b=>b.onclick=()=>linkJanToExisting(b.dataset.linkJan))
+}
+function showJanResolution(code,product){
+ janResolveState={code,product};
+ closeSheets();
+ $("#janResolveInfo").innerHTML=product?`<div class="jan-result"><b>${esc(product.name)}</b><div class="meta">JAN ${esc(code)}</div><span class="source">${esc(product.source||"外部DB")}</span></div>`:`<div class="jan-result"><b>外部データベースでは商品名を特定できませんでした</b><div class="meta">JAN ${esc(code)}</div></div>`;
+ $("#existingSearch").value="";renderJanExisting("");openSheet("#janResolveSheet")
+}
+function linkJanToExisting(pid){
+ const p=data.products.find(x=>x.id===pid);if(!p)return;
+ const code=janResolveState.code;p.jans=[...new Set([...(p.jans||[]),p.jan,code].map(normalizeJan).filter(Boolean))];if(!p.jan)p.jan=code;
+ if(janResolveState.product)data.productCache[code]=janResolveState.product;
+ save();restockProduct(pid);closeSheets();toast(p.name+" にJANを紐付けて補充しました")
+}
 async function lookupJan(rawCode){
  let code=normalizeJan(rawCode);if(!code)return;
  $("#janStatus").textContent="JAN "+code+" を検索中…";
  if(!validGtin(code)){toast("JANコードのチェック桁が不正です");$("#janStatus").textContent="読み取り値を確認してください："+code;return}
- let local=data.products.find(p=>normalizeJan(p.jan)===code);
- if(local){chg(local.id,1);toast(local.name+" を補充しました");return}
+ let local=data.products.find(p=>productHasJan(p,code));
+ if(local){restockProduct(local.id);closeSheets();toast(local.name+" を補充しました");return}
  let cached=data.productCache?.[code];
- if(cached){closeSheets();openProduct(null,{jan:code,name:cached.name,cat:cached.cat||classifyProduct(cached.name)});toast("以前の検索結果を使いました");return}
- let product=await rakutenLookup(code);
- if(!product)product=await openFactsLookup(code);
- if(product){
-  data.productCache=data.productCache||{};data.productCache[code]=product;save();
-  closeSheets();openProduct(null,{jan:code,name:product.name,cat:product.cat||classifyProduct(product.name)});
-  toast(product.source+"で商品を見つけました");
- }else{
-  closeSheets();openProduct(null,{jan:code,name:"",cat:"日用品"});toast("商品名が見つからないので手入力してください");
- }
+ if(cached){showJanResolution(code,cached);return}
+ $("#janStatus").textContent="複数のデータベースを照合中…";
+ const jobs=[rakutenLookup(code),yahooLookup(code),openFactsLookup(code),upcItemDbLookup(code)];
+ const rs=await Promise.allSettled(jobs);
+ const product=rs.map(x=>x.status==="fulfilled"?x.value:null).find(Boolean)||null;
+ if(product){data.productCache=data.productCache||{};data.productCache[code]=product;save()}
+ showJanResolution(code,product)
 }
 async function ocr(file,cb){let r=await Tesseract.recognize(file,"jpn+eng",{logger:m=>{if(m.progress)cb?.(Math.round(m.progress*100))}});return r.data.text||""}
 function guess(n){if(/洗剤|ティッシュ|シャンプ|歯磨|ラップ|柔軟|石鹸|ゴミ袋/.test(n))return"日用品";if(/醤油|しょうゆ|味噌|みそ|塩|砂糖|油|酢|ソース|ケチャップ|マヨ|胡椒/.test(n))return"調味料";return"食品"}
@@ -310,6 +429,23 @@ function dateFrom(text){let t=text.replace(/[年月]/g,"/").replace(/日/g,""),m
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));$("#add").onclick=()=>openProduct();$("#back").onclick=closeSheets;document.querySelectorAll(".close").forEach(b=>b.onclick=closeSheets);document.querySelectorAll("#cats button").forEach(b=>b.onclick=()=>choose("#cats",b.dataset.v));document.querySelectorAll("#types button").forEach(b=>b.onclick=()=>choose("#types",b.dataset.v));$("#saveProduct").onclick=saveProduct;
 $("#deleteProduct").onclick=()=>{let x=$("#pid").value;if(x&&confirm("削除しますか？")){data.products=data.products.filter(p=>p.id!==x);save();closeSheets();render()}};
 $("#janSearch").onclick=()=>lookupJan($("#manualJan").value);
+$("#existingSearch").oninput=e=>renderJanExisting(e.target.value);
+$("#newFromJan").onclick=()=>{const {code,product}=janResolveState;closeSheets();openProduct(null,{jan:code,name:product?.name||"",cat:product?.cat||"食品"})};
+$("#barcodePhoto").onchange=async e=>{
+ const f=e.target.files?.[0];if(!f)return;
+ $("#janStatus").textContent="写真からバーコードを読み取り中…";
+ await stopScanner();
+ let qrcode=null;
+ try{
+  qrcode=new Html5Qrcode("reader",scannerOptions());
+  const code=await qrcode.scanFile(f,true);
+  try{qrcode.clear()}catch{}
+  qrcode=null;await lookupJan(code)
+ }catch(err){
+  try{qrcode?.clear()}catch{}
+  $("#janStatus").textContent="写真から読み取れませんでした。バーコードを大きく写して再撮影してください。";
+ }
+};
 $("#switchCamera").onclick=()=>switchCamera();
 $("#restartCamera").onclick=async()=>{await stopScanner();await startScanner();};
 $("#receiptPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#receiptProgress").classList.remove("hidden");try{let t=await ocr(f,p=>$("#receiptProgress").textContent="読み取り中… "+p+"%");showCandidates(receiptItems(t))}catch{alert("読み取りに失敗しました")}finally{$("#receiptProgress").classList.add("hidden")}};
