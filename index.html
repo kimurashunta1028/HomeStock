@@ -9,6 +9,7 @@
 <title>HomeStock</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#f4f2ed;--card:#fffdf9;--ink:#22312b;--muted:#7d8581;--line:#e4e1da;--g:#5c776b;--g2:#dce8e2;--red:#b45142;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",sans-serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}.hidden{display:none!important}
@@ -35,11 +36,12 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 .photo-scan{display:block;text-align:center;margin-top:9px}
 .db-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.db-badge{padding:5px 8px;border-radius:99px;background:#eeece7;color:var(--muted);font-size:10px;font-weight:800}.db-badge.on{background:var(--g2);color:#38574a}
 
+.cloud-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cloud-status{display:flex;align-items:center;gap:8px;margin-top:9px}.dot{width:9px;height:9px;border-radius:50%;background:#aaa}.dot.on{background:#4f8b69}.dot.err{background:#b45142}.sync-note{font-size:11px;color:var(--muted);line-height:1.5;margin-top:8px}
 </style>
 </head>
 <body>
 <div id="app">
-<header><div><small>HOME INVENTORY · v0.3</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<header><div><small>HOME INVENTORY · v0.4.1</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
 <main id="main"></main>
 <!-- Begin Yahoo! JAPAN Web Services Attribution Snippet -->
 <span style="margin:15px 15px 15px 15px"><a href="https://developer.yahoo.co.jp/sitemap/">Webサービス by Yahoo! JAPAN</a></span>
@@ -107,14 +109,125 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 <div id="toast" class="toast hidden"></div>
 
 <script>
-const K="homestock.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:"",yahooClientId:""}};let data=load(),tab="home",filter="すべて",scanner=null,locked=false,cameraIds=[],cameraIndex=0,currentCameraId="",janResolveState={code:"",product:null};
+const K="homestock.v1",CLOUD_K="homestock.cloud.v1",D={products:[],aliases:{},manual:[],productCache:{},settings:{rakutenAppId:"",rakutenAccessKey:"",yahooClientId:""},meta:{updatedAt:0}};
+let cloudClient=null,cloudUser=null,cloudTimer=null,cloudState="off",cloudMessage="";
+let data=load(),tab="home",filter="すべて",scanner=null,locked=false,cameraIds=[],cameraIndex=0,currentCameraId="",janResolveState={code:"",product:null};
 const $=s=>document.querySelector(s);
 function load(){try{
  let x=JSON.parse(localStorage.getItem(K))||{};
  let products=(x.products||[]).map(p=>({...p,jans:Array.isArray(p.jans)?p.jans.filter(Boolean):(p.jan?[p.jan]:[])}));
- return{...D,...x,products,productCache:x.productCache||{},settings:{...D.settings,...(x.settings||{})}}
+ return{...D,...x,products,productCache:x.productCache||{},settings:{...D.settings,...(x.settings||{})},meta:{...D.meta,...(x.meta||{})}}
 }catch{return JSON.parse(JSON.stringify(D))}}
-function save(){localStorage.setItem(K,JSON.stringify(data))}
+function save(opts={}){
+ data.meta=data.meta||{};
+ if(!opts.keepTime)data.meta.updatedAt=Date.now();
+ localStorage.setItem(K,JSON.stringify(data));
+ if(!opts.localOnly)scheduleCloudPush();
+}
+function cloudConfig(){
+ try{
+  const saved=JSON.parse(localStorage.getItem(CLOUD_K))||{};
+  return{url:saved.url||"https://ucofoevpmcjluuwoyqez.supabase.co",key:saved.key||"sb_publishable_ySfk6l9PDHFV1Fkem8TTMA_fEO9Nz9e"};
+ }catch{return{url:"https://ucofoevpmcjluuwoyqez.supabase.co",key:"sb_publishable_ySfk6l9PDHFV1Fkem8TTMA_fEO9Nz9e"}}
+}
+function setCloudConfig(v){localStorage.setItem(CLOUD_K,JSON.stringify(v))}
+function initCloudClient(){
+ const c=cloudConfig();
+ if(!c.url||!c.key||!window.supabase){cloudClient=null;cloudUser=null;cloudState="off";return false}
+ try{
+  cloudClient=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  cloudState="ready";return true;
+ }catch(e){cloudClient=null;cloudState="error";cloudMessage="Supabase設定を確認してください";return false}
+}
+function scheduleCloudPush(){
+ if(!cloudClient||!cloudUser)return;
+ clearTimeout(cloudTimer);
+ cloudTimer=setTimeout(()=>pushCloudState(false),700);
+}
+async function pushCloudState(showToast=true){
+ if(!cloudClient||!cloudUser)return false;
+ cloudState="syncing";cloudMessage="同期中…";
+ try{
+  const payload=JSON.parse(JSON.stringify(data));
+  const {error}=await cloudClient.from("home_stock_state").upsert({
+   user_id:cloudUser.id,payload,updated_at:new Date(payload.meta?.updatedAt||Date.now()).toISOString()
+  },{onConflict:"user_id"});
+  if(error)throw error;
+  cloudState="online";cloudMessage="クラウド保存済み";
+  if(showToast)toast("クラウドへ保存しました");
+  return true;
+ }catch(e){
+  cloudState="error";cloudMessage="同期失敗："+(e?.message||"不明なエラー");
+  return false;
+ }finally{if(tab==="stock")render()}
+}
+async function pullCloudState(){
+ if(!cloudClient||!cloudUser)return false;
+ cloudState="syncing";cloudMessage="クラウドから読込中…";
+ try{
+  const {data:row,error}=await cloudClient.from("home_stock_state").select("payload,updated_at").eq("user_id",cloudUser.id).maybeSingle();
+  if(error)throw error;
+  if(!row?.payload){
+   await pushCloudState(false);
+   cloudState="online";cloudMessage="初回クラウド保存完了";
+   return true;
+  }
+  const remote=row.payload||{};
+  const remoteTime=Number(remote?.meta?.updatedAt||new Date(row.updated_at).getTime()||0);
+  const localTime=Number(data?.meta?.updatedAt||0);
+  const localHas=(data.products?.length||0)+(data.manual?.length||0)>0;
+  const remoteHas=(remote.products?.length||0)+(remote.manual?.length||0)>0;
+  if(remoteTime>localTime||(!localHas&&remoteHas)){
+   data={...D,...remote,products:(remote.products||[]).map(p=>({...p,jans:Array.isArray(p.jans)?p.jans.filter(Boolean):(p.jan?[p.jan]:[])})),productCache:remote.productCache||{},settings:{...D.settings,...(remote.settings||{})},meta:{...D.meta,...(remote.meta||{})}};
+   save({localOnly:true,keepTime:true});
+   cloudMessage="クラウドから復元しました";
+   toast("クラウドの在庫を復元しました");
+  }else if(localTime>remoteTime&&localHas){
+   await pushCloudState(false);
+   cloudMessage="端末の在庫をクラウドへ保存しました";
+  }else cloudMessage="同期済み";
+  cloudState="online";
+  return true;
+ }catch(e){
+  cloudState="error";cloudMessage="同期失敗："+(e?.message||"不明なエラー");
+  return false;
+ }finally{render()}
+}
+async function initCloud(){
+ if(!initCloudClient())return;
+ try{
+  const {data:s}=await cloudClient.auth.getSession();
+  cloudUser=s?.session?.user||null;
+  cloudClient.auth.onAuthStateChange((event,session)=>{
+   cloudUser=session?.user||null;
+   if(cloudUser){cloudState="online";setTimeout(()=>pullCloudState(),0)}
+   else{cloudState="ready";cloudMessage="ログインしてください";render()}
+  });
+  if(cloudUser){cloudState="online";await pullCloudState()}
+  else{cloudState="ready";cloudMessage="ログインしてください"}
+ }catch(e){cloudState="error";cloudMessage="認証状態を取得できません"}
+ render();
+}
+async function cloudSignUp(){
+ if(!cloudClient)return toast("先にSupabase設定を保存してください");
+ const email=$("#cloudEmail")?.value.trim(),password=$("#cloudPassword")?.value||"";
+ if(!email||password.length<6)return toast("メールと6文字以上のパスワードを入力してください");
+ const {data:r,error}=await cloudClient.auth.signUp({email,password});
+ if(error)return toast("登録失敗："+error.message);
+ toast(r?.session?"アカウント作成・ログインしました":"確認メールを送信しました。メール内のリンクを開いてください");
+}
+async function cloudSignIn(){
+ if(!cloudClient)return toast("先にSupabase設定を保存してください");
+ const email=$("#cloudEmail")?.value.trim(),password=$("#cloudPassword")?.value||"";
+ if(!email||!password)return toast("メールとパスワードを入力してください");
+ const {error}=await cloudClient.auth.signInWithPassword({email,password});
+ if(error)return toast("ログイン失敗："+error.message);
+ toast("ログインしました");
+}
+async function cloudSignOut(){
+ if(cloudClient)await cloudClient.auth.signOut();
+ cloudUser=null;cloudState="ready";cloudMessage="ログアウトしました";render();
+}
 function esc(s=""){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function days(x){if(!x)return null;let a=new Date(x+"T00:00:00"),b=new Date();b.setHours(0,0,0,0);return Math.ceil((a-b)/86400000)}
@@ -133,7 +246,17 @@ function home(){
  <section class="card"><h2>家のストック</h2><div class="stats"><div class="stat"><b>${p.length}</b><small>登録商品</small></div><div class="stat"><b>${p.filter(x=>x.cat==="日用品").length}</b><small>日用品</small></div><div class="stat"><b>${p.filter(x=>x.cat==="食品").length}</b><small>食品</small></div></div></section>${recipes()}`;
 }
 function recipes(){let f=expiring().filter(x=>x.cat==="食品").slice(0,3);if(!f.length)return`<section class="card"><h2>期限優先レシピ</h2><p class="muted">期限が近い食材が出ると候補を表示します。</p></section>`;let n=f.map(x=>x.name).join("・");return`<section class="card"><h2>期限優先レシピ</h2><div class="recipe"><b>使い切り炒め</b><div class="muted">${esc(n)}を手持ちの調味料で炒める</div></div><div class="recipe"><b>具だくさんスープ</b><div class="muted">${esc(n)}をスープや味噌汁にまとめて使う</div></div></section>`}
-function stock(){let ps=data.products.filter(p=>filter==="すべて"||p.cat===filter),fs=["すべて","日用品","食品","調味料"];return`<h2>在庫</h2><div class="filters">${fs.map(f=>`<button class="filter ${f===filter?"active":""}" data-filter="${f}">${f}</button>`).join("")}</div><section class="card">${ps.length?ps.map(prow).join(""):`<p class="muted">まだ商品がありません。右上の＋から追加できます。</p>`}</section>`}
+function stock(){
+ let ps=data.products.filter(p=>filter==="すべて"||p.cat===filter),fs=["すべて","日用品","食品","調味料"],cc=cloudConfig();
+ return`<h2>在庫</h2><div class="filters">${fs.map(f=>`<button class="filter ${f===filter?"active":""}" data-filter="${f}">${f}</button>`).join("")}</div>
+ <section class="card">${ps.length?ps.map(prow).join(""):`<p class="muted">まだ商品がありません。右上の＋から追加できます。</p>`}</section>
+ <section class="card"><div class="head"><h2>クラウド同期</h2><span class="pill ${cloudUser?"":"out"}">${cloudUser?"同期ON":"未接続"}</span></div>
+ <div class="cloud-status"><span class="dot ${cloudState==="online"?"on":cloudState==="error"?"err":""}"></span><span class="muted">${esc(cloudMessage||"Supabaseに保存すると、ブラウザのデータを消しても復元できます。")}</span></div>
+ <p class="sync-note">Supabase接続は設定済みです。下のアカウントでログインすると、在庫をサーバーへ自動保存します。</p>
+ <div class="cloud-grid"><label>メール<input id="cloudEmail" type="email" autocomplete="email" placeholder="you@example.com"></label><label>パスワード<input id="cloudPassword" type="password" autocomplete="current-password" placeholder="6文字以上"></label></div>
+ <div class="cloud-grid" style="margin-top:10px"><button id="cloudLogin" class="primary">ログイン</button><button id="cloudSignup" class="secondary">新規登録</button></div>
+ ${cloudUser?`<button id="cloudSyncNow" class="secondary wide">今すぐ同期</button><button id="cloudLogout" class="textbtn wide">ログアウト</button><p class="sync-note">ログイン中：${esc(cloudUser.email||"")}</p>`:""}
+ <p class="sync-note">在庫変更は自動でクラウド保存。Chromeのサイトデータを消したり端末を替えても、同じアカウントでログインすれば復元できます。</p></section>`}
 function prow(p){let d=days(p.expiry);return`<div class="item" data-edit="${p.id}"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)}${p.expiry?" ・ "+p.expiry:""}${d!=null&&d<=2?" ・ "+dlabel(d):""}</div></div><span class="pill ${isout(p)?"out":""}">${esc(stxt(p))}</span><div class="step"><button data-minus="${p.id}">−</button><button data-plus="${p.id}">＋</button></div></div>`}
 function shop(){let s=shopping();return`<h2>買い物リスト</h2><p class="muted">在庫が0になると自動追加されます。</p><section class="card">${s.length?s.map((x,i)=>`<div class="shoprow"><span style="width:22px;height:22px;border:2px solid #c7ccc9;border-radius:7px"></span><div class="grow"><div class="name">${esc(x.name)}</div><div class="meta">${esc(x.cat||"手動")}</div></div><b>×${x.qty}${esc(x.unit||"")}</b>${x.auto?"":`<button class="textbtn" data-rm="${i}">削除</button>`}</div>`).join(""):`<p class="muted">買うものはありません。</p>`}</section><section class="card"><h2>手動で追加</h2><div class="inline"><input id="manualName" placeholder="例：長ねぎ"><button id="manualAdd" class="secondary">追加</button></div></section>`}
 function scan(){
@@ -160,6 +283,10 @@ function bind(){
   data.settings.yahooClientId=$("#yahooClientId").value.trim();
   save();toast("API設定を保存しました");render()
  });
+ $("#cloudSignup")?.addEventListener("click",cloudSignUp);
+ $("#cloudLogin")?.addEventListener("click",cloudSignIn);
+ $("#cloudLogout")?.addEventListener("click",cloudSignOut);
+ $("#cloudSyncNow")?.addEventListener("click",async()=>{await pullCloudState();await pushCloudState(true)});
 }
 function chg(id,d){let p=data.products.find(x=>x.id===id);if(!p)return;if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty+d);else if(p.type==="level"){let a=["none","low","high"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"high")+d))]}else{let a=["none","half","full"];p.state=a[Math.max(0,Math.min(2,a.indexOf(p.state||"full")+d))]}save();render()}
 function choose(sel,v){document.querySelectorAll(sel+" button").forEach(b=>b.classList.toggle("active",b.dataset.v===v))}function chosen(sel){return document.querySelector(sel+" button.active")?.dataset.v}
@@ -452,6 +579,6 @@ $("#receiptPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("
 $("#importReceipt").onclick=()=>{let a=$("#candidates")._a||[];a.forEach((x,i)=>{if(!document.querySelector(`[data-c="${i}"]`).checked)return;let n=document.querySelector(`[data-n="${i}"]`).value.trim(),cat=document.querySelector(`[data-cat="${i}"]`).value,qty=Math.max(1,+document.querySelector(`[data-q="${i}"]`).value||1);if(!n)return;data.aliases[x.raw.toLowerCase().replace(/\s/g,"")]=n;let p=data.products.find(z=>z.name===n&&z.cat===cat);if(p)p.qty=+p.qty+qty;else data.products.unshift({id:uid(),jan:"",name:n,cat,type:"count",qty,unit:"個",buyqty:1,expiry:"",state:"high"})});save();closeSheets();render();toast("在庫へ追加しました")};
 $("#expiryPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#expiryStatus").textContent="期限を読み取り中…";try{let t=await ocr(f),d=dateFrom(t);if(d){$("#expiry").value=d;$("#expiryStatus").textContent="候補："+d}else $("#expiryStatus").textContent="読めませんでした。手入力してください。"}catch{$("#expiryStatus").textContent="読み取りに失敗しました。"}};
 
-choose("#cats","日用品");choose("#types","count");render();
+choose("#cats","日用品");choose("#types","count");render();initCloud();
 </script>
 </body></html>
