@@ -41,7 +41,7 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 </head>
 <body>
 <div id="app">
-<header><div><small>HOME INVENTORY · v0.4.1</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<header><div><small>HOME INVENTORY · v0.4.2</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
 <main id="main"></main>
 <!-- Begin Yahoo! JAPAN Web Services Attribution Snippet -->
 <span style="margin:15px 15px 15px 15px"><a href="https://developer.yahoo.co.jp/sitemap/">Webサービス by Yahoo! JAPAN</a></span>
@@ -103,7 +103,7 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 
 <section id="receiptSheet" class="sheet hidden">
 <div class="handle"></div><div class="sheethead"><button class="textbtn close">閉じる</button><b>レシート読み取り</b><span></span></div>
-<div class="sheetbody"><p class="muted">商品名・数量・大分類をまとめて候補化します。</p><label class="primary wide" style="text-align:center">レシートを撮影<input id="receiptPhoto" type="file" accept="image/*" capture="environment" hidden></label><div id="receiptProgress" class="progress hidden">読み取り中…</div><div id="candidates"></div><button id="importReceipt" class="primary wide hidden">選択した商品を在庫へ追加</button></div>
+<div class="sheetbody"><p class="muted">商品名・数量・大分類をまとめて候補化します。</p><div class="inline" style="margin-top:15px"><label class="primary" style="text-align:center;margin-top:0">カメラで撮影<input id="receiptPhoto" type="file" accept="image/*" capture="environment" hidden></label><label class="secondary" style="text-align:center;margin-top:0">写真から選択<input id="receiptLibrary" type="file" accept="image/*" hidden></label></div><div id="receiptProgress" class="progress hidden">読み取り中…</div><div id="candidates"></div><button id="importReceipt" class="primary wide hidden">選択した商品を在庫へ追加</button></div>
 </section>
 
 <div id="toast" class="toast hidden"></div>
@@ -575,7 +575,9 @@ $("#barcodePhoto").onchange=async e=>{
 };
 $("#switchCamera").onclick=()=>switchCamera();
 $("#restartCamera").onclick=async()=>{await stopScanner();await startScanner();};
-$("#receiptPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#receiptProgress").classList.remove("hidden");try{let t=await ocr(f,p=>$("#receiptProgress").textContent="読み取り中… "+p+"%");showCandidates(receiptItems(t))}catch{alert("読み取りに失敗しました")}finally{$("#receiptProgress").classList.add("hidden")}};
+async function handleReceiptFile(e){let f=e.target.files?.[0];if(!f)return;$("#receiptProgress").classList.remove("hidden");$("#receiptProgress").textContent="読み取り中…";try{let t=await ocr(f,p=>$("#receiptProgress").textContent="読み取り中… "+p+"%");showCandidates(receiptItems(t))}catch{alert("読み取りに失敗しました")}finally{$("#receiptProgress").classList.add("hidden");e.target.value=""}}
+$("#receiptPhoto").onchange=handleReceiptFile;
+$("#receiptLibrary").onchange=handleReceiptFile;
 $("#importReceipt").onclick=()=>{let a=$("#candidates")._a||[];a.forEach((x,i)=>{if(!document.querySelector(`[data-c="${i}"]`).checked)return;let n=document.querySelector(`[data-n="${i}"]`).value.trim(),cat=document.querySelector(`[data-cat="${i}"]`).value,qty=Math.max(1,+document.querySelector(`[data-q="${i}"]`).value||1);if(!n)return;data.aliases[x.raw.toLowerCase().replace(/\s/g,"")]=n;let p=data.products.find(z=>z.name===n&&z.cat===cat);if(p)p.qty=+p.qty+qty;else data.products.unshift({id:uid(),jan:"",name:n,cat,type:"count",qty,unit:"個",buyqty:1,expiry:"",state:"high"})});save();closeSheets();render();toast("在庫へ追加しました")};
 $("#expiryPhoto").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;$("#expiryStatus").textContent="期限を読み取り中…";try{let t=await ocr(f),d=dateFrom(t);if(d){$("#expiry").value=d;$("#expiryStatus").textContent="候補："+d}else $("#expiryStatus").textContent="読めませんでした。手入力してください。"}catch{$("#expiryStatus").textContent="読み取りに失敗しました。"}};
 
