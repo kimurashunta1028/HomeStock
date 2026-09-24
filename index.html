@@ -41,7 +41,7 @@ label{display:block;margin-top:15px;font-size:12px;font-weight:800}input,select{
 </head>
 <body>
 <div id="app">
-<header><div><small>HOME INVENTORY · v0.4.2</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
+<header><div><small>HOME INVENTORY · v0.4.3</small><h1>HomeStock</h1></div><button class="plus" id="add">＋</button></header>
 <main id="main"></main>
 <!-- Begin Yahoo! JAPAN Web Services Attribution Snippet -->
 <span style="margin:15px 15px 15px 15px"><a href="https://developer.yahoo.co.jp/sitemap/">Webサービス by Yahoo! JAPAN</a></span>
@@ -257,7 +257,7 @@ function stock(){
  <div class="cloud-grid" style="margin-top:10px"><button id="cloudLogin" class="primary">ログイン</button><button id="cloudSignup" class="secondary">新規登録</button></div>
  ${cloudUser?`<button id="cloudSyncNow" class="secondary wide">今すぐ同期</button><button id="cloudLogout" class="textbtn wide">ログアウト</button><p class="sync-note">ログイン中：${esc(cloudUser.email||"")}</p>`:""}
  <p class="sync-note">在庫変更は自動でクラウド保存。Chromeのサイトデータを消したり端末を替えても、同じアカウントでログインすれば復元できます。</p></section>`}
-function prow(p){let d=days(p.expiry);return`<div class="item" data-edit="${p.id}"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)}${p.expiry?" ・ "+p.expiry:""}${d!=null&&d<=2?" ・ "+dlabel(d):""}</div></div><span class="pill ${isout(p)?"out":""}">${esc(stxt(p))}</span><div class="step"><button data-minus="${p.id}">−</button><button data-plus="${p.id}">＋</button></div></div>`}
+function prow(p){let d=days(p.expiry),bulk=(p.type==="count"||p.type==="reserve")?`補充 +${Math.max(1,+p.buyqty||1)}`:"補充";return`<div class="item" data-edit="${p.id}"><div class="grow"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.cat)}${p.expiry?" ・ "+p.expiry:""}${d!=null&&d<=2?" ・ "+dlabel(d):""}</div></div><span class="pill ${isout(p)?"out":""}">${esc(stxt(p))}</span><div class="step"><button data-minus="${p.id}">−</button><button data-plus="${p.id}">＋</button><button data-restock="${p.id}" title="いつもの購入量を追加">${bulk}</button></div></div>`}
 function shop(){let s=shopping();return`<h2>買い物リスト</h2><p class="muted">在庫が0になると自動追加されます。</p><section class="card">${s.length?s.map((x,i)=>`<div class="shoprow"><span style="width:22px;height:22px;border:2px solid #c7ccc9;border-radius:7px"></span><div class="grow"><div class="name">${esc(x.name)}</div><div class="meta">${esc(x.cat||"手動")}</div></div><b>×${x.qty}${esc(x.unit||"")}</b>${x.auto?"":`<button class="textbtn" data-rm="${i}">削除</button>`}</div>`).join(""):`<p class="muted">買うものはありません。</p>`}</section><section class="card"><h2>手動で追加</h2><div class="inline"><input id="manualName" placeholder="例：長ねぎ"><button id="manualAdd" class="secondary">追加</button></div></section>`}
 function scan(){
  let rakuten=!!(data.settings.rakutenAppId&&data.settings.rakutenAccessKey),yahoo=!!data.settings.yahooClientId;
@@ -274,7 +274,7 @@ function scan(){
  <section class="card"><h2>検索順</h2><p class="muted">登録済みJAN → 端末キャッシュ → 楽天 / Yahoo / Open Facts / UPCitemdb → 登録済み商品から選択 → 新規登録</p></section>`}
 function bind(){
  $("#toStock")?.addEventListener("click",()=>setTab("stock"));document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()});
- document.querySelectorAll("[data-minus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.minus,-1)});document.querySelectorAll("[data-plus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.plus,1)});
+ document.querySelectorAll("[data-minus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.minus,-1)});document.querySelectorAll("[data-plus]").forEach(b=>b.onclick=e=>{e.stopPropagation();chg(b.dataset.plus,1)});document.querySelectorAll("[data-restock]").forEach(b=>b.onclick=e=>{e.stopPropagation();restockProduct(b.dataset.restock,true)});
  document.querySelectorAll("[data-edit]").forEach(x=>x.onclick=()=>openProduct(x.dataset.edit));$("#openJan")?.addEventListener("click",openJan);$("#openReceipt")?.addEventListener("click",()=>openSheet("#receiptSheet"));
  $("#manualAdd")?.addEventListener("click",()=>{let i=$("#manualName");if(!i.value.trim())return;data.manual.push({name:i.value.trim(),qty:1,unit:"",cat:"候補"});save();render()});document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{data.manual.splice(+b.dataset.rm,1);save();render()});
  $("#saveApiSettings")?.addEventListener("click",()=>{
@@ -413,12 +413,14 @@ function productHasJan(p,code){
  code=normalizeJan(code);
  return normalizeJan(p.jan)===code||(p.jans||[]).some(x=>normalizeJan(x)===code)
 }
-function restockProduct(pid){
+function restockProduct(pid,showToast=false){
  const p=data.products.find(x=>x.id===pid);if(!p)return;
- if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty||0)+1;
+ const amount=Math.max(1,+p.buyqty||1);
+ if(p.type==="count"||p.type==="reserve")p.qty=Math.max(0,+p.qty||0)+amount;
  else if(p.type==="level")p.state="high";
  else if(p.type==="pack")p.state="full";
- save();render()
+ save();render();
+ if(showToast)toast(p.type==="count"||p.type==="reserve"?`${p.name} を ${amount}${p.unit||"個"} 補充しました`:`${p.name} を補充しました`)
 }
 function normalizeJan(code){
  code=String(code||"").replace(/\D/g,"");
